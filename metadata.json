@@ -1,0 +1,6 @@
+{
+  "name": "Ticket Booking System",
+  "description": "Full-stack ticket booking platform for movies and concerts with real-time visual seat selection, seat holds with TTL, concurrency control, waitlist auto-assignment, and QR ticket delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

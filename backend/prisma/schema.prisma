@@ -1,0 +1,273 @@
+// Prisma Schema for Ticket Booking System
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  CUSTOMER
+  ORGANISER
+  ADMIN
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  REFUNDED
+}
+
+enum WaitlistStatus {
+  WAITING
+  OFFERED
+  CONVERTED
+  EXPIRED
+  CANCELLED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  DECLINED
+}
+
+model User {
+  id            String         @id @default(uuid()) @db.Uuid
+  email         String         @unique @db.VarChar(255)
+  passwordHash  String         @map("password_hash") @db.VarChar(255)
+  fullName      String         @map("full_name") @db.VarChar(150)
+  phoneNumber   String?        @map("phone_number") @db.VarChar(30)
+  role          UserRole       @default(CUSTOMER)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  venuesCreated Venue[]        @relation("VenuesCreated")
+  showsCreated  Show[]         @relation("ShowsCreated")
+  heldSeats     ShowSeat[]     @relation("UserHeldSeats")
+  bookings      Booking[]
+  waitlistItems Waitlist[]
+  offers        WaitlistOffer[]
+
+  @@map("users")
+}
+
+model Venue {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String         @db.VarChar(200)
+  address       String         @db.Text
+  city          String         @db.VarChar(100)
+  totalCapacity Int            @default(0) @map("total_capacity")
+  createdBy     String?        @map("created_by") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  creator       User?          @relation("VenuesCreated", fields: [createdBy], references: [id], onDelete: SetNull)
+  categories    SeatCategory[]
+  seats         Seat[]
+  shows         Show[]
+
+  @@map("venues")
+}
+
+model SeatCategory {
+  id          String        @id @default(uuid()) @db.Uuid
+  venueId     String        @map("venue_id") @db.Uuid
+  name        String        @db.VarChar(100)
+  description String?       @db.Text
+  colorCode   String        @default("#3B82F6") @map("color_code") @db.VarChar(10)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+
+  venue       Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seats       Seat[]
+  pricing     ShowPricing[]
+  showSeats   ShowSeat[]
+  waitlists   Waitlist[]
+
+  @@unique([venueId, name])
+  @@map("seat_categories")
+}
+
+model Seat {
+  id           String       @id @default(uuid()) @db.Uuid
+  venueId      String       @map("venue_id") @db.Uuid
+  categoryId   String       @map("category_id") @db.Uuid
+  rowLabel     String       @map("row_label") @db.VarChar(10)
+  seatNumber   Int          @map("seat_number")
+  gridRow      Int          @map("grid_row")
+  gridCol      Int          @map("grid_col")
+  isAccessible Boolean      @default(false) @map("is_accessible")
+  isActive     Boolean      @default(true) @map("is_active")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+
+  venue        Venue        @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  category     SeatCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  showSeats    ShowSeat[]
+  bookingSeats BookingSeat[]
+
+  @@unique([venueId, rowLabel, seatNumber])
+  @@map("seats")
+}
+
+model Show {
+  id                   String          @id @default(uuid()) @db.Uuid
+  venueId              String          @map("venue_id") @db.Uuid
+  organiserId          String          @map("organiser_id") @db.Uuid
+  title                String          @db.VarChar(255)
+  description          String?         @db.Text
+  bannerImageUrl       String?         @map("banner_image_url") @db.Text
+  category             String          @db.VarChar(100)
+  startTime            DateTime        @map("start_time") @db.Timestamptz()
+  endTime              DateTime        @map("end_time") @db.Timestamptz()
+  holdDurationMinutes  Int             @default(10) @map("hold_duration_minutes")
+  offerDurationMinutes Int             @default(15) @map("offer_duration_minutes")
+  isPublished          Boolean         @default(true) @map("is_published")
+  createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  venue                Venue           @relation(fields: [venueId], references: [id], onDelete: Restrict)
+  organiser            User            @relation("ShowsCreated", fields: [organiserId], references: [id], onDelete: Restrict)
+  pricing              ShowPricing[]
+  showSeats            ShowSeat[]
+  bookings             Booking[]
+  waitlist             Waitlist[]
+  waitlistOffers       WaitlistOffer[]
+
+  @@map("shows")
+}
+
+model ShowPricing {
+  id         String       @id @default(uuid()) @db.Uuid
+  showId     String       @map("show_id") @db.Uuid
+  categoryId String       @map("category_id") @db.Uuid
+  priceCents Int          @map("price_cents")
+  currency   String       @default("USD") @db.VarChar(3)
+
+  show       Show         @relation(fields: [showId], references: [id], onDelete: Cascade)
+  category   SeatCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([showId, categoryId])
+  @@map("show_pricing")
+}
+
+model ShowSeat {
+  id                String          @id @default(uuid()) @db.Uuid
+  showId            String          @map("show_id") @db.Uuid
+  seatId            String          @map("seat_id") @db.Uuid
+  categoryId        String          @map("category_id") @db.Uuid
+  status            SeatStatus      @default(AVAILABLE)
+  heldByUserId      String?         @map("held_by_user_id") @db.Uuid
+  holdExpiresAt     DateTime?       @map("hold_expires_at") @db.Timestamptz()
+  holdSessionToken  String?         @map("hold_session_token") @db.VarChar(255)
+  version           Int             @default(1)
+  updatedAt         DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  show              Show            @relation(fields: [showId], references: [id], onDelete: Cascade)
+  seat              Seat            @relation(fields: [seatId], references: [id], onDelete: Cascade)
+  category          SeatCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  heldByUser        User?           @relation("UserHeldSeats", fields: [heldByUserId], references: [id], onDelete: SetNull)
+  bookingSeats      BookingSeat[]
+  waitlistOffers    WaitlistOffer[]
+
+  @@unique([showId, seatId])
+  @@index([showId, status])
+  @@index([status, holdExpiresAt])
+  @@map("show_seats")
+}
+
+model Booking {
+  id               String        @id @default(uuid()) @db.Uuid
+  bookingReference String        @unique @map("booking_reference") @db.VarChar(32)
+  userId           String        @map("user_id") @db.Uuid
+  showId           String        @map("show_id") @db.Uuid
+  status           BookingStatus @default(CONFIRMED)
+  totalAmountCents Int           @map("total_amount_cents")
+  currency         String        @default("USD") @db.VarChar(3)
+  paymentStatus    String        @default("COMPLETED") @map("payment_status") @db.VarChar(50)
+  paymentReference String?       @map("payment_reference") @db.VarChar(255)
+  qrCodeData       String        @map("qr_code_data") @db.Text
+  confirmedAt      DateTime      @default(now()) @map("confirmed_at") @db.Timestamptz()
+  cancelledAt      DateTime?     @map("cancelled_at") @db.Timestamptz()
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user             User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  show             Show          @relation(fields: [showId], references: [id], onDelete: Restrict)
+  bookingSeats     BookingSeat[]
+
+  @@index([userId])
+  @@index([showId])
+  @@map("bookings")
+}
+
+model BookingSeat {
+  id           String   @id @default(uuid()) @db.Uuid
+  bookingId    String   @map("booking_id") @db.Uuid
+  showSeatId   String   @map("show_seat_id") @db.Uuid
+  seatId       String   @map("seat_id") @db.Uuid
+  pricePaidCents Int    @map("price_paid_cents")
+  seatRowLabel String   @map("seat_row_label") @db.VarChar(10)
+  seatNumber   Int      @map("seat_number")
+  categoryName String   @map("category_name") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  booking      Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  showSeat     ShowSeat @relation(fields: [showSeatId], references: [id], onDelete: Restrict)
+  seat         Seat     @relation(fields: [seatId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, showSeatId])
+  @@map("booking_seats")
+}
+
+model Waitlist {
+  id                  String         @id @default(uuid()) @db.Uuid
+  showId              String         @map("show_id") @db.Uuid
+  categoryId          String         @map("category_id") @db.Uuid
+  userId              String         @map("user_id") @db.Uuid
+  requestedSeatsCount Int            @default(1) @map("requested_seats_count")
+  status              WaitlistStatus @default(WAITING)
+  priorityOrder       Int            @default(autoincrement()) @map("priority_order")
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+
+  show                Show           @relation(fields: [showId], references: [id], onDelete: Cascade)
+  category            SeatCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers              WaitlistOffer[]
+
+  @@unique([showId, categoryId, userId])
+  @@index([showId, categoryId, status, priorityOrder])
+  @@map("waitlist")
+}
+
+model WaitlistOffer {
+  id           String      @id @default(uuid()) @db.Uuid
+  waitlistId   String      @map("waitlist_id") @db.Uuid
+  showId       String      @map("show_id") @db.Uuid
+  showSeatId   String      @map("show_seat_id") @db.Uuid
+  userId       String      @map("user_id") @db.Uuid
+  offerToken   String      @unique @map("offer_token") @db.VarChar(255)
+  status       OfferStatus @default(PENDING)
+  expiresAt    DateTime    @map("expires_at") @db.Timestamptz()
+  offeredAt    DateTime    @default(now()) @map("offered_at") @db.Timestamptz()
+  respondedAt  DateTime?   @map("responded_at") @db.Timestamptz()
+
+  waitlist     Waitlist    @relation(fields: [waitlistId], references: [id], onDelete: Cascade)
+  show         Show        @relation(fields: [showId], references: [id], onDelete: Cascade)
+  showSeat     ShowSeat    @relation(fields: [showSeatId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([offerToken])
+  @@index([status, expiresAt])
+  @@map("waitlist_offers")
+}
