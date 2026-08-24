@@ -27,13 +27,25 @@ export class BookingsController {
         return;
       }
 
+      const rawEmail = customerEmail || req.user?.email;
+      const trimmedEmail = typeof rawEmail === 'string' ? rawEmail.trim() : '';
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+        res.status(400).json({
+          error: 'ValidationError',
+          message: 'Please enter a valid email address.',
+        });
+        return;
+      }
+
       const result = await BookingService.confirmBooking({
         showId,
         seatIds,
         userId,
         holdSessionToken,
-        customerEmail: customerEmail || req.user?.email,
-        customerName: customerName || req.user?.fullName,
+        customerEmail: trimmedEmail,
+        customerName: customerName ? customerName.trim() : (req.user?.fullName || 'Valued Customer'),
       });
 
       if (!result.success) {

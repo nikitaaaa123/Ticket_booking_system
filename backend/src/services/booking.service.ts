@@ -61,11 +61,13 @@ export class BookingService {
     const venue = store.venues.get(show.venueId);
     const user = store.users.get(userId);
 
-    const emailToUse = customerEmail || user?.email;
-    const nameToUse = customerName || user?.fullName || 'Valued Customer';
+    const rawEmail = customerEmail || user?.email;
+    const emailToUse = typeof rawEmail === 'string' ? rawEmail.trim() : '';
+    const nameToUse = (customerName || user?.fullName || 'Valued Customer').trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!emailToUse) {
-      return { success: false, error: 'ValidationError', message: 'Recipient customer email is required.' };
+    if (!emailToUse || !emailRegex.test(emailToUse)) {
+      return { success: false, error: 'ValidationError', message: 'Please enter a valid email address.' };
     }
 
     const sortedSeatIds = [...seatIds].sort();

@@ -46,14 +46,14 @@ export interface EmailDispatchResult {
  */
 export function validateRecipientEmail(rawEmail?: string | null): { valid: boolean; email: string; error?: string } {
   if (!rawEmail || typeof rawEmail !== 'string') {
-    return { valid: false, email: '', error: 'Recipient email address is required and cannot be empty.' };
+    return { valid: false, email: '', error: 'Please enter a valid email address.' };
   }
 
-  const trimmed = rawEmail.trim().toLowerCase();
+  const trimmed = rawEmail.trim();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   if (!emailRegex.test(trimmed)) {
-    return { valid: false, email: trimmed, error: `Invalid recipient email address format: "${trimmed}".` };
+    return { valid: false, email: trimmed, error: 'Please enter a valid email address.' };
   }
 
   return { valid: true, email: trimmed };
@@ -69,12 +69,9 @@ export class EmailService {
 
     const envConfig = getEmailConfig();
     const hasSendGridKey = Boolean(envConfig.sendgridApiKey);
-    const maskedKey = hasSendGridKey
-      ? `${envConfig.sendgridApiKey.substring(0, 4)}***${envConfig.sendgridApiKey.slice(-4)}`
-      : 'not set';
 
     console.log('[EmailService] Mailer Service Configuration:');
-    console.log(`  - SendGrid Configured: ${hasSendGridKey ? 'YES' : 'NO'} (${maskedKey})`);
+    console.log(`  - SendGrid Configured: ${hasSendGridKey ? 'YES' : 'NO'}`);
     console.log(`  - Sender Name (EMAIL_FROM_NAME): "${envConfig.emailFromName}"`);
     console.log(`  - Sender Address (EMAIL_FROM_ADDRESS): <${envConfig.emailFromAddress}>`);
     if (hasSendGridKey) {
@@ -286,27 +283,19 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
     // 1. SendGrid API Delivery Flow
     if (envConfig.sendgridApiKey) {
       const apiKey = envConfig.sendgridApiKey;
-      const maskedKey = apiKey.length > 8 ? `${apiKey.substring(0, 4)}***${apiKey.slice(-4)}` : '***';
 
-      console.log('[EmailService] Dispatching confirmation email via SendGrid API:', {
-        hasSendGridApiKey: true,
-        keyPrefix: maskedKey,
-        senderEmail,
-        senderName,
-        recipientEmail,
-        subject,
-        hasQrAttachment: Boolean(qrBase64),
-      });
+      // Safely log email recipient without logging API key
+      console.log(`EMAIL RECIPIENT: ${recipientEmail}`);
 
       try {
         sgMail.setApiKey(apiKey);
 
+        const fromAddress = (process.env.EMAIL_FROM_ADDRESS || envConfig.emailFromAddress || senderEmail).trim();
+        const fromName = (process.env.EMAIL_FROM_NAME || envConfig.emailFromName || senderName).trim();
+
         const msg: sgMail.MailDataRequired = {
           to: recipientEmail,
-          from: {
-            email: senderEmail,
-            name: senderName,
-          },
+          from: fromName ? { email: fromAddress, name: fromName } : fromAddress,
           subject,
           text: textContent,
           html: htmlContent,
@@ -329,7 +318,7 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
         console.log('[EmailService] SendGrid API Accepted Dispatch:', {
           statusCode: response.statusCode,
           recipientEmail,
-          senderEmail,
+          senderEmail: fromAddress,
           messageId: (response.headers && response.headers['x-message-id']) || 'sendgrid-accepted',
         });
 
@@ -347,8 +336,6 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
         const errorMessage = error.message || 'SendGrid API delivery failed';
 
         console.error('[EmailService] SendGrid API Error delivering confirmation email:', {
-          hasSendGridApiKey: true,
-          keyPrefix: maskedKey,
           senderEmail,
           recipientEmail,
           statusCode,

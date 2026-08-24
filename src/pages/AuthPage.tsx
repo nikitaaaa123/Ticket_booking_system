@@ -9,9 +9,9 @@ interface AuthPageProps {
 export const AuthPage: React.FC<AuthPageProps> = ({ onSuccess }) => {
   const { login, register, switchDemoUser } = useAuth();
   const [isRegister, setIsRegister] = useState<boolean>(false);
-  const [email, setEmail] = useState<string>('alice@example.com');
-  const [password, setPassword] = useState<string>('Password123!');
-  const [fullName, setFullName] = useState<string>('Alice Johnson');
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
+  const [fullName, setFullName] = useState<string>('');
   const [role, setRole] = useState<'CUSTOMER' | 'ORGANISER' | 'ADMIN'>('CUSTOMER');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);

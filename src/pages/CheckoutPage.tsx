@@ -112,8 +112,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       return;
     }
 
-    if (!customerEmail || !customerName) {
-      setErrorMsg('Please enter your full name and email for ticket delivery.');
+    const trimmedEmail = customerEmail.trim();
+    const trimmedName = customerName.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setErrorMsg('Please enter a valid email address.');
+      return;
+    }
+
+    if (!trimmedName) {
+      setErrorMsg('Please enter your full name.');
       return;
     }
 
@@ -137,14 +146,14 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     }
 
     try {
-      const res = await apiFetch<{ booking: Booking }>('/api/bookings/confirm', {
+      const res = await apiFetch<{ booking: Booking; emailDelivery?: any }>('/api/bookings/confirm', {
         method: 'POST',
         body: JSON.stringify({
           showId: activeHold.showId,
           seatIds: activeHold.heldSeatIds,
           holdSessionToken: activeHold.holdSessionToken,
-          customerEmail,
-          customerName,
+          customerEmail: trimmedEmail,
+          customerName: trimmedName,
         }),
       });
 
