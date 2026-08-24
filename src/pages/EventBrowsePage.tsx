@@ -192,7 +192,7 @@ export const EventBrowsePage: React.FC<EventBrowsePageProps> = ({ onSelectShow }
                         type="button"
                         className="px-4 py-2 rounded-xl bg-blue-600 group-hover:bg-cyan-500 text-white group-hover:text-slate-950 text-xs font-bold transition-all shadow-md"
                       >
-                        {isSoldOut ? 'Join Waitlist' : 'Select Seats &rarr;'}
+                        {isSoldOut ? 'Join Waitlist' : 'Select Seats →'}
                       </button>
                     </div>
                   </div>

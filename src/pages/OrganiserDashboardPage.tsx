@@ -179,7 +179,7 @@ export const OrganiserDashboardPage: React.FC = () => {
       {feedback && (
         <div className="mb-6 p-4 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs flex items-center justify-between">
           <span>{feedback}</span>
-          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white">&times;</button>
+          <button onClick={() => setFeedback(null)} className="text-slate-400 hover:text-white">✕</button>
         </div>
       )}
 
@@ -223,7 +223,7 @@ export const OrganiserDashboardPage: React.FC = () => {
               onClick={() => setActiveTab('shows')}
               className="text-xs text-slate-400 hover:text-white"
             >
-              &larr; Back to Shows
+              ← Back to Shows
             </button>
           </div>
 

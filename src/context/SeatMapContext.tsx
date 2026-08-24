@@ -101,7 +101,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (!event.seatIds || event.seatIds.length === 0) return prevSeats;
       const targetIds = new Set(event.seatIds);
 
-      return prevSeats.map((seat) => {
+      const nextSeats = prevSeats.map((seat) => {
         if (!targetIds.has(seat.id)) return seat;
 
         if (event.type === 'SEAT_HELD') {
@@ -128,6 +128,22 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         return seat;
       });
+
+      // Recalculate category availability dynamically in real-time
+      setCategories((prevCategories) => {
+        return prevCategories.map((cat) => {
+          const availableInCat = nextSeats.filter(
+            (s) => s.categoryId === cat.id && s.status === 'AVAILABLE'
+          ).length;
+          return {
+            ...cat,
+            availableSeats: availableInCat,
+            isSoldOut: availableInCat === 0,
+          };
+        });
+      });
+
+      return nextSeats;
     });
 
     // If seats were held by someone ELSE, or booked, safely remove from local clicked selection

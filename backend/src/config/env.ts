@@ -3,7 +3,7 @@ dotenv.config();
 
 const rawEmailFrom = process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || '';
 let parsedFromName = process.env.EMAIL_FROM_NAME || 'Ticket Booking System';
-let parsedFromAddress = process.env.EMAIL_FROM_ADDRESS || 'no-reply@ticketbooking.com';
+let parsedFromAddress = process.env.EMAIL_FROM_ADDRESS || '';
 
 if (rawEmailFrom) {
   const match = rawEmailFrom.match(/(.*?)\s*<(.+?)>/);
@@ -32,11 +32,25 @@ if (!smtpHost) {
     smtpPort = Number(process.env.SMTP_PORT) || 587;
     smtpUser = process.env.SMTP_USER || 'apikey';
     smtpPass = smtpPass || process.env.SENDGRID_API_KEY || '';
-  } else if (emailProvider === 'gmail') {
+  } else if (emailProvider === 'gmail' || smtpHost.includes('gmail')) {
     smtpHost = 'smtp.gmail.com';
     smtpPort = Number(process.env.SMTP_PORT) || 465;
   }
 }
+
+// Ensure SMTP_USER and EMAIL_FROM address alignment for deliverability (especially for Gmail)
+if (!parsedFromAddress) {
+  if (smtpUser && smtpUser.includes('@')) {
+    parsedFromAddress = smtpUser;
+  } else {
+    parsedFromAddress = 'no-reply@ticketbooking.com';
+  }
+} else if ((emailProvider === 'gmail' || smtpHost.includes('gmail')) && smtpUser && smtpUser.includes('@') && parsedFromAddress !== smtpUser) {
+  console.log(`[Config] Aligning EMAIL_FROM with authenticated Gmail user (${smtpUser}) to prevent SPF rejection and inbox drop.`);
+  parsedFromAddress = smtpUser;
+}
+
+const resolvedEmailFrom = `"${parsedFromName}" <${parsedFromAddress}>`;
 
 export const config = {
   port: Number(process.env.PORT) || 3000,
@@ -49,7 +63,7 @@ export const config = {
   defaultWaitlistOfferTTLMinutes: Number(process.env.DEFAULT_WAITLIST_OFFER_TTL_MINUTES) || 15,
   sweepIntervalSeconds: Number(process.env.SWEEP_INTERVAL_SECONDS) || 15,
   emailProvider,
-  emailFrom: rawEmailFrom || `"${parsedFromName}" <${parsedFromAddress}>`,
+  emailFrom: resolvedEmailFrom,
   emailFromName: parsedFromName,
   emailFromAddress: parsedFromAddress,
   smtpHost,

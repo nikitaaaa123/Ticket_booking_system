@@ -198,13 +198,37 @@ export class EmailService {
     try {
       const transporter = this.getTransporter();
       const htmlContent = this.renderBookingConfirmationHTML(data);
+      const textContent = `
+Booking Confirmed!
+Booking Reference: ${data.bookingReference}
 
-      console.log(`[EmailService] Preparing booking confirmation email for ${data.recipientEmail} (Ref: ${data.bookingReference})...`);
+Event: ${data.showTitle}
+Date & Time: ${new Date(data.startTime).toLocaleString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+Venue: ${data.venueName}
+${data.venueAddress ? `Address: ${data.venueAddress}\n` : ''}Seats: ${data.seatLabels.join(', ')}
+Total Paid: ${data.totalAmountFormatted}
+
+Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingReference} at gate entrance.
+      `.trim();
+
+      const fromAddress = config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`;
+
+      console.log(`[EmailService] Preparing booking confirmation dispatch:`, {
+        from: fromAddress,
+        to: data.recipientEmail,
+        recipientName: data.recipientName,
+        subject: `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`,
+        contentTypes: 'text/html + text/plain (multi-part MIME with inline QR attachment)',
+        htmlLength: htmlContent.length,
+        textLength: textContent.length,
+        hasQrBuffer: !!data.qrCodeBuffer,
+      });
 
       const mailOptions: nodemailer.SendMailOptions = {
-        from: config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`,
+        from: fromAddress,
         to: data.recipientEmail,
         subject: `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`,
+        text: textContent,
         html: htmlContent,
         attachments: data.qrCodeBuffer
           ? [
@@ -220,7 +244,16 @@ export class EmailService {
       };
 
       const info = await transporter.sendMail(mailOptions);
-      console.log(`[EmailService] Sent confirmation email to ${data.recipientEmail} [MessageID: ${info.messageId || 'sandbox-stream'}]`);
+
+      console.log(`[EmailService] SMTP Server Accepted Dispatch:`, {
+        to: data.recipientEmail,
+        messageId: info.messageId || 'sandbox-stream',
+        response: info.response,
+        accepted: info.accepted,
+        rejected: info.rejected,
+        envelope: info.envelope,
+      });
+
       if (info.message) {
         console.log(`[EmailService Sandbox Message Generated] To: ${data.recipientEmail}, Ref: ${data.bookingReference}`);
       }
@@ -363,16 +396,36 @@ export class EmailService {
     try {
       const transporter = this.getTransporter();
       const htmlContent = this.renderWaitlistOfferHTML(data);
+      const textContent = `
+A seat just opened up for ${data.showTitle}!
+
+Hello ${data.recipientName},
+Good news! A seat (${data.seatLabel}) has become available for you for ${data.showTitle} at ${data.venueName} (${data.priceFormatted}).
+
+Claim your ticket before the expiration deadline:
+${data.claimUrl}
+
+If you do not claim it in time, it will automatically be offered to the next waitlist candidate.
+      `.trim();
+
+      const fromAddress = config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`;
 
       const mailOptions: nodemailer.SendMailOptions = {
-        from: `"${config.emailFromName}" <${config.emailFromAddress}>`,
+        from: fromAddress,
         to: data.recipientEmail,
         subject: `Seat Available! Claim your ticket for ${data.showTitle} before it expires`,
+        text: textContent,
         html: htmlContent,
       };
 
       const info = await transporter.sendMail(mailOptions);
-      console.log(`[EmailService] Sent waitlist offer email to ${data.recipientEmail} [MessageID: ${info.messageId || 'sandbox-stream'}]`);
+      console.log(`[EmailService] SMTP Server Accepted Waitlist Offer:`, {
+        to: data.recipientEmail,
+        messageId: info.messageId || 'sandbox-stream',
+        response: info.response,
+        accepted: info.accepted,
+        rejected: info.rejected,
+      });
       return { success: true, messageId: info.messageId };
     } catch (error: any) {
       console.error('[EmailService] Failed to send waitlist email:', error.message);

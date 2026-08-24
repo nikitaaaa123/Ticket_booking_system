@@ -282,7 +282,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               <div className="text-[11px] font-bold text-slate-400 uppercase">Reserved Seats</div>
               {heldSeatsDetails.map((seat) => (
                 <div key={seat.id} className="flex justify-between text-xs text-slate-300">
-                  <span>Row {seat.rowLabel} &bull; Seat {seat.seatNumber} ({seat.categoryName})</span>
+                  <span>Row {seat.rowLabel} • Seat {seat.seatNumber} ({seat.categoryName})</span>
                   <span className="font-mono text-cyan-400">${(seat.priceCents / 100).toFixed(2)}</span>
                 </div>
               ))}

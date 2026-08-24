@@ -118,7 +118,7 @@ function MainApp() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white">VELOCITY PASS</span>
-            <span>&bull; High-Concurrency Real-Time Ticketing Engine</span>
+            <span>• High-Concurrency Real-Time Ticketing Engine</span>
           </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-400">
             <span>WebSocket Live Feeds</span>

@@ -134,7 +134,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-500/10 text-cyan-400 border border-cyan-800">
                 {show.category}
               </span>
-              <span className="text-xs text-slate-400">&bull; Live Real-Time Seating</span>
+              <span className="text-xs text-slate-400">• Live Real-Time Seating</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               {show.title}
@@ -233,7 +233,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
                   >
                     <div>
                       <div className="font-bold text-white">
-                        Row {seat.rowLabel} &bull; Seat {seat.seatNumber}
+                        Row {seat.rowLabel} • Seat {seat.seatNumber}
                       </div>
                       <div className="text-[11px] text-slate-400">{seat.categoryName}</div>
                     </div>
@@ -274,7 +274,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
               {isSeatLoading ? (
                 'Securing Seats...'
               ) : activeHold ? (
-                'Proceed to Checkout &rarr;'
+                'Proceed to Checkout →'
               ) : (
                 <>
                   <Lock className="w-3.5 h-3.5" /> Lock & Hold Seats ({show?.holdDurationMinutes || 10}m)

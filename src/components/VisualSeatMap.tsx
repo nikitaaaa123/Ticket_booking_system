@@ -69,19 +69,19 @@ export const VisualSeatMap: React.FC<VisualSeatMapProps> = ({
     const isHeldByOther = seat.status === 'HELD' && seat.heldByUserId !== currentUserId;
     const isBooked = seat.status === 'BOOKED';
 
-    if (isSelected || isHeldByMe) {
-      return {
-        bg: 'bg-emerald-600 border-emerald-500 text-white shadow-md shadow-emerald-600/30 scale-105 ring-2 ring-emerald-400',
-        label: 'Selected by you',
-        clickable: true,
-      };
-    }
-
     if (isBooked) {
       return {
         bg: 'bg-slate-800/80 border-slate-700 text-slate-500 cursor-not-allowed opacity-60',
         label: 'Booked / Unavailable',
         clickable: false,
+      };
+    }
+
+    if (isSelected || isHeldByMe) {
+      return {
+        bg: 'bg-emerald-600 border-emerald-500 text-white shadow-md shadow-emerald-600/30 scale-105 ring-2 ring-emerald-400',
+        label: 'Selected by you',
+        clickable: true,
       };
     }
 
@@ -223,7 +223,7 @@ export const VisualSeatMap: React.FC<VisualSeatMapProps> = ({
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-white truncate">{cat.name}</div>
               <div className="text-xs text-slate-400">
-                ${(cat.priceCents / 100).toFixed(2)} &bull; {cat.availableSeats} left
+                ${(cat.priceCents / 100).toFixed(2)} • {cat.availableSeats} left
               </div>
             </div>
           </div>

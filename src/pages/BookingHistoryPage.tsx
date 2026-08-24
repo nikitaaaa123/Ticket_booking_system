@@ -119,7 +119,7 @@ export const BookingHistoryPage: React.FC<BookingHistoryPageProps> = ({
         <div className="mb-6 p-4 rounded-xl bg-blue-950/80 border border-blue-800 text-blue-300 text-xs flex items-center justify-between">
           <span>{actionFeedback}</span>
           <button onClick={() => setActionFeedback(null)} className="text-slate-400 hover:text-white font-bold">
-            &times;
+            ✕
           </button>
         </div>
       )}
@@ -314,7 +314,7 @@ export const BookingHistoryPage: React.FC<BookingHistoryPageProps> = ({
                           onClick={() => onClaimOffer(entry.activeOfferToken!)}
                           className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-md flex items-center gap-1.5"
                         >
-                          Claim Offered Seat &rarr;
+                          Claim Offered Seat →
                         </button>
                       )}
                     </div>
@@ -338,7 +338,7 @@ export const BookingHistoryPage: React.FC<BookingHistoryPageProps> = ({
                 onClick={() => setSelectedBookingForQR(null)}
                 className="text-slate-400 hover:text-white text-lg font-bold"
               >
-                &times;
+                ✕
               </button>
             </div>
 
