@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Show } from '../types/client.ts';
 import { apiFetch } from '../services/api.ts';
 import { useSeatMap } from '../context/SeatMapContext.tsx';
@@ -47,10 +47,11 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
     requestHold,
     releaseHold,
     loadShowSeats,
+    handleSeatEvent,
     joinWaitlist,
   } = useSeatMap();
 
-  // Load show meta
+  // Load show metadata on mount
   useEffect(() => {
     async function fetchShow() {
       setIsLoadingShow(true);
@@ -70,14 +71,22 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
 
   // Selected seats summary
   const selectedSeatsSummary = useMemo(() => {
-    const selected = seats.filter((s) => selectedSeatIds.includes(s.id));
-    const totalCents = selected.reduce((sum, s) => sum + s.priceCents, 0);
+    const effectiveSeatIds = selectedSeatIds.length > 0 
+      ? selectedSeatIds 
+      : (activeHold?.heldSeatIds || []);
+    
+    const selected = seats.filter((s) => effectiveSeatIds.includes(s.id));
+    const totalCents = selected.length > 0 
+      ? selected.reduce((sum, s) => sum + s.priceCents, 0)
+      : (activeHold?.totalPriceCents || 0);
+
     return {
       items: selected,
       totalFormatted: `$${(totalCents / 100).toFixed(2)}`,
       totalCents,
+      count: effectiveSeatIds.length,
     };
-  }, [seats, selectedSeatIds]);
+  }, [seats, selectedSeatIds, activeHold]);
 
   const handleHoldAndContinue = async () => {
     if (activeHold) {
@@ -90,6 +99,10 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
     }
   };
 
+  const handleSilentRefresh = useCallback(() => {
+    loadShowSeats(showId, true);
+  }, [showId, loadShowSeats]);
+
   const formattedDate = show
     ? new Date(show.startTime).toLocaleString('en-US', {
         weekday: 'long',
@@ -100,6 +113,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
         minute: '2-digit',
       })
     : '';
+
+  const canProceed = (selectedSeatIds.length > 0 || Boolean(activeHold)) && !isSeatLoading;
 
   return (
     <div id="event-detail-page" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -176,7 +191,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
             categories={categories}
             selectedSeatIds={selectedSeatIds}
             onToggleSeat={toggleSeatSelection}
-            onRefresh={() => loadShowSeats(showId)}
+            onSeatEvent={handleSeatEvent}
+            onRefresh={handleSilentRefresh}
           />
 
           {/* Waitlist Component if any category is sold out */}
@@ -193,7 +209,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Ticket className="w-4 h-4 text-cyan-400" /> Selected Seats
               </h3>
-              {selectedSeatIds.length > 0 && (
+              {selectedSeatIds.length > 0 && !activeHold && (
                 <button
                   onClick={clearSelection}
                   className="text-xs text-slate-400 hover:text-rose-400 transition-colors"
@@ -233,7 +249,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
             <div className="border-t border-slate-800 pt-4 space-y-2">
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <span>Seats Selected</span>
-                <span className="font-bold text-white">{selectedSeatIds.length}</span>
+                <span className="font-bold text-white">{selectedSeatsSummary.count}</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="font-bold text-slate-200">Subtotal</span>
@@ -245,12 +261,13 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
 
             {/* Hold & Checkout CTA Button */}
             <button
+              id="lock-and-hold-seats-btn"
               type="button"
-              disabled={selectedSeatIds.length === 0 || isSeatLoading}
+              disabled={!canProceed}
               onClick={handleHoldAndContinue}
               className={`w-full py-3.5 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-lg flex items-center justify-center gap-2 ${
-                selectedSeatIds.length > 0
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-cyan-500/20'
+                canProceed
+                  ? 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-cyan-500/20 cursor-pointer'
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
             >

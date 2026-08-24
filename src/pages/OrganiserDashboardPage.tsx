@@ -81,16 +81,37 @@ export const OrganiserDashboardPage: React.FC = () => {
 
     try {
       // Fetch venue categories to construct pricing
-      const venueData = await apiFetch<{ categories: any[] }>(`/api/venues/${venueId}`);
-      const cats = venueData.categories || [];
+      const venueRes = await apiFetch<{ venue?: { categories?: any[]; seats?: any[] }; categories?: any[] }>(`/api/venues/${venueId}`);
+      let cats = venueRes.venue?.categories || venueRes.categories || [];
 
-      const pricing = cats.map((c) => {
+      // Fallback to loaded venues state if empty
+      if (cats.length === 0) {
+        const found = venues.find((v) => v.id === venueId);
+        if (found && (found as any).categories?.length > 0) {
+          cats = (found as any).categories;
+        }
+      }
+
+      if (cats.length === 0) {
+        throw new Error('The selected venue has no configured seating categories. Please select a valid venue or configure categories first.');
+      }
+
+      const pricing = cats.map((c: any) => {
         let price = standardPrice;
-        if (c.name.toLowerCase().includes('vip')) price = vipPrice;
-        if (c.name.toLowerCase().includes('balcony')) price = balconyPrice;
+        const name = (c.name || '').toLowerCase();
+        if (name.includes('vip') || name.includes('orchestra') || name.includes('front')) {
+          price = vipPrice;
+        } else if (name.includes('balcony') || name.includes('mezzanine') || name.includes('tier') || name.includes('upper')) {
+          price = balconyPrice;
+        } else if (name.includes('premium')) {
+          price = Math.round((vipPrice + standardPrice) / 2);
+        } else {
+          price = standardPrice;
+        }
+
         return {
           categoryId: c.id,
-          priceCents: Math.round(price * 100),
+          priceCents: Math.max(100, Math.round(price * 100)),
           currency: 'USD',
         };
       });

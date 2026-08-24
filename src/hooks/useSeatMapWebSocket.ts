@@ -15,91 +15,146 @@ export function useSeatMapWebSocket({
 }: UseSeatMapWebSocketProps) {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [lastEvent, setLastEvent] = useState<RealtimeSeatEvent | null>(null);
+
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
+  const pingIntervalRef = useRef<any>(null);
+  const isUnmountedRef = useRef<boolean>(false);
 
-  const connect = useCallback(() => {
-    if (!showId) return;
+  // Store latest callbacks in refs so changes in caller references do NOT trigger socket reconnects
+  const onSeatEventRef = useRef(onSeatEvent);
+  onSeatEventRef.current = onSeatEvent;
 
-    // Clean up previous socket if open
-    if (socketRef.current) {
-      socketRef.current.close();
-    }
-
-    try {
-      const wsUrl = getWebSocketUrl();
-      const ws = new WebSocket(wsUrl);
-      socketRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        // Subscribe to show room
-        ws.send(
-          JSON.stringify({
-            action: 'subscribe',
-            showId,
-          })
-        );
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === 'SUBSCRIBED') {
-            return;
-          }
-
-          setLastEvent(payload);
-          if (onSeatEvent) {
-            onSeatEvent(payload);
-          }
-          if (onRefreshNeeded) {
-            onRefreshNeeded();
-          }
-        } catch (err) {
-          console.error('Failed to parse WebSocket message:', err);
-        }
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        // Reconnect after backoff if component is still mounted
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (showId) connect();
-        }, 3000);
-      };
-
-      ws.onerror = (err) => {
-        console.warn('WebSocket error:', err);
-        ws.close();
-      };
-    } catch (e) {
-      console.warn('Could not establish WebSocket connection:', e);
-    }
-  }, [showId, onSeatEvent, onRefreshNeeded]);
+  const onRefreshNeededRef = useRef(onRefreshNeeded);
+  onRefreshNeededRef.current = onRefreshNeeded;
 
   useEffect(() => {
+    isUnmountedRef.current = false;
+
+    if (!showId) {
+      setIsConnected(false);
+      return;
+    }
+
+    const connect = () => {
+      if (isUnmountedRef.current) return;
+
+      // Close existing socket if open
+      if (socketRef.current) {
+        try {
+          socketRef.current.onclose = null;
+          socketRef.current.onerror = null;
+          socketRef.current.close();
+        } catch {}
+        socketRef.current = null;
+      }
+
+      try {
+        const wsUrl = getWebSocketUrl();
+        console.log(`[WebSocket] Connecting to ${wsUrl} for show ${showId}...`);
+        const ws = new WebSocket(wsUrl);
+        socketRef.current = ws;
+
+        ws.onopen = () => {
+          if (isUnmountedRef.current) {
+            ws.close();
+            return;
+          }
+          console.log(`[WebSocket] Connected successfully to real-time gateway`);
+          setIsConnected(true);
+
+          // Subscribe to show room
+          ws.send(
+            JSON.stringify({
+              action: 'SUBSCRIBE_SHOW',
+              showId,
+            })
+          );
+
+          // Setup ping heartbeat every 25s
+          if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+          pingIntervalRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ action: 'PING' }));
+            }
+          }, 25000);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'PONG' || payload.type === 'CONNECTED' || payload.type === 'SUBSCRIBED') {
+              return;
+            }
+
+            setLastEvent(payload);
+
+            if (onSeatEventRef.current) {
+              onSeatEventRef.current(payload);
+            }
+            if (onRefreshNeededRef.current) {
+              onRefreshNeededRef.current();
+            }
+          } catch (err) {
+            console.error('[WebSocket] Failed to parse message:', err);
+          }
+        };
+
+        ws.onclose = (event) => {
+          console.log(`[WebSocket] Connection closed (code: ${event.code})`);
+          setIsConnected(false);
+          if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+
+          if (!isUnmountedRef.current && showId) {
+            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = setTimeout(() => {
+              connect();
+            }, 3000);
+          }
+        };
+
+        ws.onerror = (err) => {
+          console.warn('[WebSocket] Encountered error:', err);
+          try {
+            ws.close();
+          } catch {}
+        };
+      } catch (e) {
+        console.warn('[WebSocket] Connection initialization error:', e);
+        if (!isUnmountedRef.current && showId) {
+          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, 3000);
+        }
+      }
+    };
+
     connect();
 
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
+      isUnmountedRef.current = true;
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+
       if (socketRef.current) {
-        if (socketRef.current.readyState === WebSocket.OPEN && showId) {
-          try {
+        try {
+          if (socketRef.current.readyState === WebSocket.OPEN) {
             socketRef.current.send(
               JSON.stringify({
-                action: 'unsubscribe',
+                action: 'UNSUBSCRIBE',
                 showId,
               })
             );
-          } catch {}
-        }
-        socketRef.current.close();
+          }
+          socketRef.current.onclose = null;
+          socketRef.current.onerror = null;
+          socketRef.current.close();
+        } catch {}
+        socketRef.current = null;
       }
     };
-  }, [connect, showId]);
+  }, [showId]);
 
   return { isConnected, lastEvent };
 }

@@ -200,7 +200,19 @@ export class ShowsController {
         return;
       }
 
-      if (!pricing || !Array.isArray(pricing) || pricing.length === 0) {
+      let resolvedPricing = pricing;
+      if (!resolvedPricing || !Array.isArray(resolvedPricing) || resolvedPricing.length === 0) {
+        const venueCategories = Array.from(store.categories.values()).filter((c) => c.venueId === venueId);
+        if (venueCategories.length > 0) {
+          resolvedPricing = venueCategories.map((c) => ({
+            categoryId: c.id,
+            priceCents: 5000,
+            currency: 'USD',
+          }));
+        }
+      }
+
+      if (!resolvedPricing || !Array.isArray(resolvedPricing) || resolvedPricing.length === 0) {
         res.status(400).json({
           error: 'ValidationError',
           message: 'Pricing array for seat categories is required.',
@@ -232,13 +244,13 @@ export class ShowsController {
 
       // Save category pricing
       const createdPricing: ShowPricing[] = [];
-      for (const priceItem of pricing) {
+      for (const priceItem of resolvedPricing) {
         const pricingId = `p-${newShow.id}-${priceItem.categoryId}`;
         const newPricing: ShowPricing = {
           id: pricingId,
           showId: newShow.id,
           categoryId: priceItem.categoryId,
-          priceCents: Number(priceItem.priceCents),
+          priceCents: Number(priceItem.priceCents) || 5000,
           currency: priceItem.currency || 'USD',
         };
         store.showPricing.set(newPricing.id, newPricing);

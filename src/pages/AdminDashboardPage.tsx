@@ -38,10 +38,11 @@ export const AdminDashboardPage: React.FC = () => {
   const loadVenueDetails = async (vId: string) => {
     try {
       const res = await apiFetch<{ venue: Venue; categories: SeatCategory[] }>(`/api/venues/${vId}`);
+      const cats = res.categories || (res.venue as any)?.categories || [];
       setSelectedVenue(res.venue);
-      setCategories(res.categories || []);
-      if (res.categories && res.categories.length > 0) {
-        setSelectedCatId(res.categories[0].id);
+      setCategories(cats);
+      if (cats.length > 0) {
+        setSelectedCatId(cats[0].id);
       }
     } catch (err: any) {
       console.error(err);

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { ShowSeatDetail, CategorySummary } from '../types/client.ts';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useSeatMapWebSocket } from '../hooks/useSeatMapWebSocket.ts';
+import { RealtimeSeatEvent } from '../../backend/src/types/index.ts';
 import { Radio, Users, Sparkles, CheckCircle, Clock } from 'lucide-react';
 
 interface VisualSeatMapProps {
@@ -10,7 +11,8 @@ interface VisualSeatMapProps {
   categories: CategorySummary[];
   selectedSeatIds: string[];
   onToggleSeat: (seat: ShowSeatDetail) => void;
-  onRefresh: () => void;
+  onSeatEvent?: (event: RealtimeSeatEvent) => void;
+  onRefresh?: () => void;
 }
 
 export const VisualSeatMap: React.FC<VisualSeatMapProps> = ({
@@ -19,6 +21,7 @@ export const VisualSeatMap: React.FC<VisualSeatMapProps> = ({
   categories,
   selectedSeatIds,
   onToggleSeat,
+  onSeatEvent,
   onRefresh,
 }) => {
   const { user, guestUserId } = useAuth();
@@ -27,9 +30,8 @@ export const VisualSeatMap: React.FC<VisualSeatMapProps> = ({
   // Real-time WebSocket connection
   const { isConnected, lastEvent } = useSeatMapWebSocket({
     showId,
-    onRefreshNeeded: () => {
-      onRefresh();
-    },
+    onSeatEvent,
+    onRefreshNeeded: onRefresh,
   });
 
   // Calculate layout grid metrics

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { ShowSeatDetail, CategorySummary } from '../types/client.ts';
 import { apiFetch } from '../services/api.ts';
 import { useAuth } from './AuthContext.tsx';
+import { RealtimeSeatEvent } from '../../backend/src/types/index.ts';
 
 interface HoldSession {
   holdSessionToken: string;
@@ -24,7 +25,8 @@ interface SeatMapContextType {
   clearSelection: () => void;
   requestHold: () => Promise<boolean>;
   releaseHold: () => Promise<void>;
-  loadShowSeats: (showId: string) => Promise<void>;
+  loadShowSeats: (showId: string, silent?: boolean) => Promise<void>;
+  handleSeatEvent: (event: RealtimeSeatEvent) => void;
   joinWaitlist: (categoryId: string, requestedCount?: number, email?: string, name?: string) => Promise<{ success: boolean; queuePosition?: number; message?: string }>;
 }
 
@@ -37,7 +39,6 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [currentShowId, setCurrentShowId] = useState<string | null>(null);
   const [seats, setSeats] = useState<ShowSeatDetail[]>([]);
   const [categories, setCategories] = useState<CategorySummary[]>([]);
-  const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([]);
   const [activeHold, setActiveHold] = useState<HoldSession | null>(() => {
     const saved = localStorage.getItem('tbs_active_hold');
     if (saved) {
@@ -53,16 +54,22 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return null;
   });
 
+  const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>(() => {
+    if (activeHold?.heldSeatIds && activeHold.heldSeatIds.length > 0) {
+      return activeHold.heldSeatIds;
+    }
+    return [];
+  });
+
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeHoldRef = useRef(activeHold);
-  activeHoldRef.current = activeHold;
-
   // Load seats from backend
-  const loadShowSeats = useCallback(async (showId: string) => {
-    setIsLoading(true);
+  const loadShowSeats = useCallback(async (showId: string, silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+    }
     setError(null);
     setCurrentShowId(showId);
     try {
@@ -77,9 +84,62 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (err: any) {
       setError(err.message || 'Failed to load seat layout');
     } finally {
-      setIsLoading(false);
+      if (!silent) {
+        setIsLoading(false);
+      }
     }
   }, []);
+
+  // Real-time surgical seat event handler (updates state in-place without resetting selection)
+  const handleSeatEvent = useCallback((event: RealtimeSeatEvent) => {
+    if (!event) return;
+
+    setSeats((prevSeats) => {
+      if (!event.seatIds || event.seatIds.length === 0) return prevSeats;
+      const targetIds = new Set(event.seatIds);
+
+      return prevSeats.map((seat) => {
+        if (!targetIds.has(seat.id)) return seat;
+
+        if (event.type === 'SEAT_HELD') {
+          return {
+            ...seat,
+            status: 'HELD' as const,
+            heldByUserId: event.heldByUserId || null,
+            holdExpiresAt: event.expiresAt || null,
+          };
+        } else if (event.type === 'SEAT_RELEASED') {
+          return {
+            ...seat,
+            status: 'AVAILABLE' as const,
+            heldByUserId: null,
+            holdExpiresAt: null,
+          };
+        } else if (event.type === 'SEAT_BOOKED') {
+          return {
+            ...seat,
+            status: 'BOOKED' as const,
+            heldByUserId: null,
+            holdExpiresAt: null,
+          };
+        }
+        return seat;
+      });
+    });
+
+    // If seats were held by someone ELSE, or booked, safely remove from local clicked selection
+    if (event.type === 'SEAT_HELD' && event.heldByUserId && event.heldByUserId !== currentEffectiveUserId) {
+      if (event.seatIds && event.seatIds.length > 0) {
+        const heldByOtherSet = new Set(event.seatIds);
+        setSelectedSeatIds((prev) => prev.filter((id) => !heldByOtherSet.has(id)));
+      }
+    } else if (event.type === 'SEAT_BOOKED') {
+      if (event.seatIds && event.seatIds.length > 0) {
+        const bookedSet = new Set(event.seatIds);
+        setSelectedSeatIds((prev) => prev.filter((id) => !bookedSet.has(id)));
+      }
+    }
+  }, [currentEffectiveUserId]);
 
   // Countdown timer for active hold
   useEffect(() => {
@@ -99,7 +159,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         localStorage.removeItem('tbs_active_hold');
         setSelectedSeatIds([]);
         if (currentShowId) {
-          loadShowSeats(currentShowId);
+          loadShowSeats(currentShowId, true);
         }
       }
     };
@@ -113,7 +173,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const toggleSeatSelection = useCallback((seat: ShowSeatDetail) => {
     // If seat is booked, or held by someone else, ignore click
     if (seat.status === 'BOOKED') return;
-    if (seat.status === 'HELD' && seat.heldByUserId !== currentEffectiveUserId) return;
+    if (seat.status === 'HELD' && seat.heldByUserId && seat.heldByUserId !== currentEffectiveUserId) return;
 
     setSelectedSeatIds((prev) => {
       if (prev.includes(seat.id)) {
@@ -159,20 +219,21 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const holdData: HoldSession = {
           holdSessionToken: res.holdSessionToken,
           showId: currentShowId,
-          heldSeatIds: res.heldSeatIds,
+          heldSeatIds: res.heldSeatIds || selectedSeatIds,
           expiresAt: res.expiresAt,
           totalPriceCents: res.totalPriceCents,
         };
         setActiveHold(holdData);
         localStorage.setItem('tbs_active_hold', JSON.stringify(holdData));
+        setSelectedSeatIds(res.heldSeatIds || selectedSeatIds);
         return true;
       }
       return false;
     } catch (err: any) {
       setError(err.message || 'Seat hold request failed. A seat may have just been claimed.');
-      // Refresh seat layout to show real state
+      // Refresh seat layout silently to show real state
       if (currentShowId) {
-        loadShowSeats(currentShowId);
+        loadShowSeats(currentShowId, true);
       }
       return false;
     } finally {
@@ -198,7 +259,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       localStorage.removeItem('tbs_active_hold');
       setSelectedSeatIds([]);
       if (currentShowId) {
-        loadShowSeats(currentShowId);
+        loadShowSeats(currentShowId, true);
       }
     }
   }, [activeHold, currentShowId, loadShowSeats]);
@@ -228,9 +289,9 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }),
       });
 
-      // Refresh category list
+      // Refresh category list silently
       if (currentShowId) {
-        loadShowSeats(currentShowId);
+        loadShowSeats(currentShowId, true);
       }
 
       return {
@@ -262,6 +323,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         requestHold,
         releaseHold,
         loadShowSeats,
+        handleSeatEvent,
         joinWaitlist,
       }}
     >
