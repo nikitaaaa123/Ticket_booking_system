@@ -10,5 +10,7 @@ router.get('/show/:showId', optionalAuthenticate, SeatsController.getSeatMap);
 // Hold and Release operations
 router.post('/hold', optionalAuthenticate, SeatsController.holdSeats);
 router.post('/release', optionalAuthenticate, SeatsController.releaseSeats);
+router.post('/verify-hold', optionalAuthenticate, SeatsController.verifyHold);
+router.post('/verify', optionalAuthenticate, SeatsController.verifyHold);
 
 export default router;

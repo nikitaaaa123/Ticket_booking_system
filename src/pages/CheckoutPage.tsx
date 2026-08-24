@@ -26,7 +26,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   onBookingSuccess,
 }) => {
   const { user } = useAuth();
-  const { activeHold, remainingSeconds, releaseHold, seats } = useSeatMap();
+  const { activeHold, remainingSeconds, releaseHold, verifyActiveHold, seats } = useSeatMap();
 
   const [customerName, setCustomerName] = useState<string>(user?.fullName || '');
   const [customerEmail, setCustomerEmail] = useState<string>(user?.email || '');
@@ -37,6 +37,32 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isHoldExpired, setIsHoldExpired] = useState<boolean>(false);
+
+  // Sync and verify active hold with backend server on mount and when activeHold changes
+  useEffect(() => {
+    if (!activeHold) {
+      setIsHoldExpired(true);
+      return;
+    }
+
+    verifyActiveHold().then((res) => {
+      if (!res.valid) {
+        setIsHoldExpired(true);
+        setErrorMsg(res.message || 'Seat hold expired — please select the seat again.');
+      } else {
+        setIsHoldExpired(false);
+      }
+    });
+  }, [activeHold?.holdSessionToken, verifyActiveHold]);
+
+  // Automatically update state when countdown hits zero
+  useEffect(() => {
+    if (remainingSeconds <= 0 && activeHold) {
+      setIsHoldExpired(true);
+      setErrorMsg('Seat hold expired — please select the seat again.');
+    }
+  }, [remainingSeconds, activeHold]);
 
   // Load show meta
   useEffect(() => {
@@ -44,32 +70,34 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     apiFetch<{ show: Show }>(`/api/shows/${activeHold.showId}`)
       .then((res) => setShowMeta(res.show))
       .catch(console.error);
-  }, [activeHold]);
+  }, [activeHold?.showId]);
 
-  if (!activeHold || remainingSeconds <= 0) {
+  const isExpired = isHoldExpired || !activeHold || remainingSeconds <= 0;
+
+  if (!activeHold && isExpired) {
     return (
-      <div className="max-w-md mx-auto my-16 p-8 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-4">
-        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
-          <Clock className="w-6 h-6" />
+      <div className="max-w-md mx-auto my-16 p-8 rounded-3xl bg-slate-900 border border-slate-800 text-center space-y-5">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto">
+          <Clock className="w-7 h-7" />
         </div>
-        <h2 className="text-xl font-bold text-white">Hold Reservation Expired</h2>
+        <h2 className="text-xl font-bold text-white">Seat hold expired — please select the seat again</h2>
         <p className="text-xs text-slate-400 leading-relaxed">
-          Your 10-minute seat hold lock has timed out, and the seats were returned to the inventory pool or reallocated to the waitlist queue.
+          Your 10-minute seat hold lock has timed out, and the seats were automatically returned to the inventory pool or reallocated to the waitlist queue.
         </p>
         <button
           onClick={onBack}
-          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg transition-all"
+          className="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs shadow-lg transition-all flex items-center justify-center gap-2"
         >
-          Return to Seat Selection
+          <ArrowLeft className="w-4 h-4" /> Return to Seat Selection
         </button>
       </div>
     );
   }
 
-  const heldSeatsDetails = seats.filter((s) => activeHold.heldSeatIds.includes(s.id));
-  const subtotalFormatted = `$${(activeHold.totalPriceCents / 100).toFixed(2)}`;
-  const serviceFeeCents = Math.round(activeHold.totalPriceCents * 0.05);
-  const totalAmountCents = activeHold.totalPriceCents + serviceFeeCents;
+  const heldSeatsDetails = activeHold ? seats.filter((s) => activeHold.heldSeatIds.includes(s.id)) : [];
+  const subtotalFormatted = activeHold ? `$${(activeHold.totalPriceCents / 100).toFixed(2)}` : '$0.00';
+  const serviceFeeCents = activeHold ? Math.round(activeHold.totalPriceCents * 0.05) : 0;
+  const totalAmountCents = activeHold ? activeHold.totalPriceCents + serviceFeeCents : 0;
   const totalFormatted = `$${(totalAmountCents / 100).toFixed(2)}`;
 
   // Formatted timer strings
@@ -78,6 +106,12 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   const handleConfirmOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeHold || isExpired) {
+      setErrorMsg('Seat hold expired — please select the seat again.');
+      setIsHoldExpired(true);
+      return;
+    }
+
     if (!customerEmail || !customerName) {
       setErrorMsg('Please enter your full name and email for ticket delivery.');
       return;
@@ -85,6 +119,22 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
     setIsProcessing(true);
     setErrorMsg(null);
+
+    // Pre-verify hold immediately before committing payment
+    try {
+      const verifyRes = await verifyActiveHold();
+      if (!verifyRes.valid) {
+        setIsHoldExpired(true);
+        setErrorMsg('Seat hold expired — please select the seat again.');
+        setIsProcessing(false);
+        return;
+      }
+    } catch (err: any) {
+      setIsHoldExpired(true);
+      setErrorMsg('Seat hold expired — please select the seat again.');
+      setIsProcessing(false);
+      return;
+    }
 
     try {
       const res = await apiFetch<{ booking: Booking }>('/api/bookings/confirm', {
@@ -102,7 +152,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       localStorage.removeItem('tbs_active_hold');
       onBookingSuccess(res.booking);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Payment and booking confirmation failed.');
+      const isHoldExpiredError =
+        err.message?.toLowerCase().includes('expired') ||
+        err.error === 'HoldExpired' ||
+        err.status === 410;
+
+      if (isHoldExpiredError) {
+        setIsHoldExpired(true);
+        setErrorMsg('Seat hold expired — please select the seat again.');
+      } else {
+        setErrorMsg(err.message || 'Payment and booking confirmation failed.');
+      }
       setIsProcessing(false);
     }
   };
@@ -110,28 +170,53 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   return (
     <div id="checkout-page" className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       {/* Top Header with Prominent Countdown Timer */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <button
           onClick={onBack}
           className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" /> Change Seat Selection
+          <ArrowLeft className="w-4 h-4" /> Return to Seat Selection
         </button>
 
-        {/* Live Countdown Badge */}
+        {/* Live Synchronized Countdown Badge */}
         <div
-          className={`flex items-center gap-2 px-4 py-2 rounded-2xl border font-mono font-bold text-sm ${
-            remainingSeconds < 120
-              ? 'bg-rose-950/80 text-rose-300 border-rose-600 animate-pulse'
+          className={`flex items-center gap-2 px-4 py-2 rounded-2xl border font-mono font-bold text-sm transition-all ${
+            isExpired
+              ? 'bg-rose-950/90 text-rose-300 border-rose-600 ring-2 ring-rose-500/40'
+              : remainingSeconds < 120
+              ? 'bg-amber-950/80 text-amber-300 border-amber-600 animate-pulse'
               : 'bg-emerald-950/80 text-emerald-300 border-emerald-600'
           }`}
         >
           <Clock className="w-4 h-4" />
-          <span>Hold Time Remaining: {minutes}:{seconds}</span>
+          <span>
+            {isExpired ? 'Hold Status: EXPIRED' : `Hold Time Remaining: ${minutes}:${seconds}`}
+          </span>
         </div>
       </div>
 
-      {errorMsg && (
+      {/* Prominent Expired Alert Banner */}
+      {isExpired && (
+        <div className="mb-6 p-5 rounded-2xl bg-rose-950/90 border-2 border-rose-600 text-rose-200 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-6 h-6 text-rose-400 flex-shrink-0" />
+            <div>
+              <div className="font-extrabold text-white">Seat hold expired — please select the seat again</div>
+              <div className="text-xs text-rose-300 mt-0.5">
+                The 10-minute hold window has elapsed. The seat lock was released back to the general inventory pool.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onBack}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs whitespace-nowrap transition-all shadow-md"
+          >
+            Select Seats Again
+          </button>
+        </div>
+      )}
+
+      {errorMsg && !isExpired && (
         <div className="mb-6 p-4 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
@@ -167,10 +252,11 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     <input
                       type="text"
                       required
+                      disabled={isExpired}
                       placeholder="e.g. Jane Doe"
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none focus:border-cyan-400"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none focus:border-cyan-400 disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -184,10 +270,11 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     <input
                       type="email"
                       required
+                      disabled={isExpired}
                       placeholder="e.g. jane@example.com"
                       value={customerEmail}
                       onChange={(e) => setCustomerEmail(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none focus:border-cyan-400"
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none focus:border-cyan-400 disabled:opacity-50"
                     />
                   </div>
                 </div>
@@ -217,9 +304,10 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                   <label className="block text-[11px] text-slate-400 mb-1">Card Number</label>
                   <input
                     type="text"
+                    disabled={isExpired}
                     value={cardNumber}
                     onChange={(e) => setCardNumber(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono disabled:opacity-50"
                   />
                 </div>
 
@@ -228,32 +316,42 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     <label className="block text-[11px] text-slate-400 mb-1">Expires</label>
                     <input
                       type="text"
+                      disabled={isExpired}
                       value={cardExpiry}
                       onChange={(e) => setCardExpiry(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono disabled:opacity-50"
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-400 mb-1">CVC / CVV</label>
                     <input
                       type="text"
+                      disabled={isExpired}
                       value={cardCvc}
                       onChange={(e) => setCardCvc(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs font-mono disabled:opacity-50"
                     />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Submit Action */}
+            {/* Submit Action: Immediately disabled upon expiration */}
             <button
               type="submit"
-              disabled={isProcessing}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-sm tracking-wider uppercase shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
+              disabled={isProcessing || isExpired}
+              className={`w-full py-4 rounded-2xl font-extrabold text-sm tracking-wider uppercase shadow-xl transition-all flex items-center justify-center gap-2 ${
+                isExpired
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white shadow-cyan-500/20 cursor-pointer'
+              }`}
             >
               {isProcessing ? (
                 'Confirming & Generating Tickets...'
+              ) : isExpired ? (
+                <>
+                  <AlertTriangle className="w-4 h-4 text-rose-400" /> Hold Expired — Please Select Seats Again
+                </>
               ) : (
                 <>
                   <Lock className="w-4 h-4" /> Pay {totalFormatted} & Confirm Booking
@@ -303,6 +401,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                 <span className="text-cyan-400 font-mono text-base">{totalFormatted}</span>
               </div>
             </div>
+
+            {isExpired && (
+              <div className="pt-2">
+                <button
+                  onClick={onBack}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Return to Seat Selection
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

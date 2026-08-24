@@ -5,6 +5,7 @@ import { realtimeService } from './realtime.service.ts';
 import { QRService } from './qr.service.ts';
 import { EmailService } from './email.service.ts';
 import { WaitlistService } from './waitlist.service.ts';
+import { SeatHoldService } from './seatHold.service.ts';
 
 export interface ConfirmBookingParams {
   showId: string;
@@ -61,156 +62,190 @@ export class BookingService {
       return { success: false, error: 'ValidationError', message: 'Recipient customer email is required.' };
     }
 
-    const now = new Date();
     const sortedSeatIds = [...seatIds].sort();
 
-    const verifiedSeats: ShowSeat[] = [];
-    const bookingItems: BookingItem[] = [];
-    const seatLabels: string[] = [];
-    let totalAmountCents = 0;
+    // Perform atomic transaction under strict seat mutex locks
+    return await SeatHoldService.withSeatLocks(sortedSeatIds, async () => {
+      const now = new Date();
+      const verifiedSeats: ShowSeat[] = [];
+      const bookingItems: BookingItem[] = [];
+      const seatLabels: string[] = [];
+      let totalAmountCents = 0;
+      const expiredSeatIds: string[] = [];
 
-    // Validate all seats are held by this user and hold hasn't expired
-    for (const seatId of sortedSeatIds) {
-      const seat = store.showSeats.get(seatId);
-      if (!seat || seat.showId !== showId) {
-        return { success: false, error: 'SeatNotFound', message: `Seat ${seatId} not found for show.` };
+      // Validate all seats are held by this user and hold hasn't expired
+      for (const seatId of sortedSeatIds) {
+        const seat = store.showSeats.get(seatId);
+        if (!seat || seat.showId !== showId) {
+          return { success: false, error: 'SeatNotFound', message: `Seat ${seatId} not found for show.` };
+        }
+
+        const isExpired = seat.holdExpiresAt && new Date(seat.holdExpiresAt) <= now;
+        if (isExpired || seat.status !== 'HELD') {
+          // Identify expired seats to release
+          for (const sId of sortedSeatIds) {
+            const s = store.showSeats.get(sId);
+            if (s && s.status === 'HELD' && s.holdExpiresAt && new Date(s.holdExpiresAt) <= now) {
+              s.status = 'AVAILABLE';
+              s.heldByUserId = null;
+              s.holdExpiresAt = null;
+              s.holdSessionToken = null;
+              s.version += 1;
+              s.updatedAt = now.toISOString();
+              store.showSeats.set(s.id, s);
+              if (!expiredSeatIds.includes(s.id)) expiredSeatIds.push(s.id);
+            }
+          }
+
+          if (expiredSeatIds.length > 0) {
+            realtimeService.broadcastToShow(showId, {
+              type: 'SEAT_RELEASED',
+              showId,
+              seatIds: expiredSeatIds,
+              reason: 'HOLD_EXPIRED',
+            });
+          }
+
+          return {
+            success: false,
+            error: 'HoldExpired',
+            message: 'Your seat hold has expired. Please select the seat again.',
+          };
+        }
+
+        const isUserMatch = Boolean(userId && seat.heldByUserId === userId);
+        const isTokenMatch = Boolean(holdSessionToken && seat.holdSessionToken === holdSessionToken);
+
+        if (!isUserMatch && !isTokenMatch) {
+          return {
+            success: false,
+            error: 'HoldInvalid',
+            message: `Hold for seat ${seatId} was not placed by you or has expired.`,
+          };
+        }
+
+        const physicalSeat = store.seats.get(seat.seatId);
+        const pricing = Array.from(store.showPricing.values()).find(
+          (p) => p.showId === showId && p.categoryId === seat.categoryId
+        );
+        const priceCents = pricing?.priceCents || 0;
+
+        const label = physicalSeat ? `Row ${physicalSeat.rowLabel}-${physicalSeat.seatNumber}` : seatId;
+        seatLabels.push(label);
+
+        bookingItems.push({
+          id: `bi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          bookingId: '', // populated below
+          showSeatId: seat.id,
+          seatLabel: label,
+          categoryId: seat.categoryId,
+          priceCents,
+        });
+
+        totalAmountCents += priceCents;
+        verifiedSeats.push(seat);
       }
 
-      const isExpired = seat.holdExpiresAt && new Date(seat.holdExpiresAt) <= now;
-      const isMyHold =
-        seat.status === 'HELD' &&
-        ((seat.heldByUserId && seat.heldByUserId === userId) ||
-          (holdSessionToken && seat.holdSessionToken === holdSessionToken));
+      // Generate reference and booking record
+      const bookingId = `b-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const bookingReference = this.generateBookingReference();
 
-      if (!isMyHold || isExpired) {
-        return {
-          success: false,
-          error: 'HoldExpiredOrInvalid',
-          message: `Hold for seat ${seatId} has expired or was not placed by you. Please select and hold again.`,
-        };
-      }
+      // Link booking items
+      bookingItems.forEach((bi) => (bi.bookingId = bookingId));
 
-      const physicalSeat = store.seats.get(seat.seatId);
-      const pricing = Array.from(store.showPricing.values()).find(
-        (p) => p.showId === showId && p.categoryId === seat.categoryId
-      );
-      const priceCents = pricing?.priceCents || 0;
-
-      const label = physicalSeat ? `Row ${physicalSeat.rowLabel}-${physicalSeat.seatNumber}` : seatId;
-      seatLabels.push(label);
-
-      bookingItems.push({
-        id: `bi-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        bookingId: '', // populated below
-        showSeatId: seat.id,
-        seatLabel: label,
-        categoryId: seat.categoryId,
-        priceCents,
+      // Generate QR Code containing verifiable pass payload
+      const qrDataURL = await QRService.generateDataURL({
+        ref: bookingReference,
+        showId: show.id,
+        showTitle: show.title,
+        seats: seatLabels,
+        userId,
+        confirmedAt: now.toISOString(),
       });
 
-      totalAmountCents += priceCents;
-      verifiedSeats.push(seat);
-    }
+      const qrBuffer = await QRService.generateBuffer({
+        ref: bookingReference,
+        showId: show.id,
+        showTitle: show.title,
+        seats: seatLabels,
+        userId,
+        confirmedAt: now.toISOString(),
+      });
 
-    // Generate reference and booking record
-    const bookingId = `b-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const bookingReference = this.generateBookingReference();
+      const newBooking: Booking = {
+        id: bookingId,
+        bookingReference,
+        showId,
+        userId,
+        customerEmail: emailToUse,
+        customerName: nameToUse,
+        totalAmountCents,
+        currency: 'USD',
+        status: 'CONFIRMED',
+        items: bookingItems,
+        qrCodeDataURL: qrDataURL,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
 
-    // Link booking items
-    bookingItems.forEach((bi) => (bi.bookingId = bookingId));
+      // Commit Booking and mark ShowSeats as 'BOOKED'
+      store.bookings.set(newBooking.id, newBooking);
 
-    // Generate QR Code containing verifiable pass payload
-    const qrDataURL = await QRService.generateDataURL({
-      ref: bookingReference,
-      showId: show.id,
-      showTitle: show.title,
-      seats: seatLabels,
-      userId,
-      confirmedAt: now.toISOString(),
-    });
+      for (const seat of verifiedSeats) {
+        seat.status = 'BOOKED';
+        seat.heldByUserId = null;
+        seat.holdExpiresAt = null;
+        seat.holdSessionToken = null;
+        seat.version += 1;
+        seat.updatedAt = now.toISOString();
+        store.showSeats.set(seat.id, seat);
+      }
 
-    const qrBuffer = await QRService.generateBuffer({
-      ref: bookingReference,
-      showId: show.id,
-      showTitle: show.title,
-      seats: seatLabels,
-      userId,
-      confirmedAt: now.toISOString(),
-    });
+      // Broadcast Real-time event to all clients viewing the seat map
+      realtimeService.broadcastToShow(showId, {
+        type: 'SEAT_BOOKED',
+        showId,
+        seatIds: sortedSeatIds,
+        bookingReference,
+      });
 
-    const newBooking: Booking = {
-      id: bookingId,
-      bookingReference,
-      showId,
-      userId,
-      customerEmail: emailToUse,
-      customerName: nameToUse,
-      totalAmountCents,
-      currency: 'USD',
-      status: 'CONFIRMED',
-      items: bookingItems,
-      qrCodeDataURL: qrDataURL,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-    };
+      // Asynchronously dispatch confirmation email with QR code
+      console.log(`[BookingService] Initiating booking confirmation email dispatch:`, {
+        bookingReference,
+        recipientEmail: emailToUse,
+        recipientName: nameToUse,
+        showTitle: show.title,
+        seatLabels,
+        totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
+      });
 
-    // Commit Booking and mark ShowSeats as 'BOOKED'
-    store.bookings.set(newBooking.id, newBooking);
-
-    for (const seat of verifiedSeats) {
-      seat.status = 'BOOKED';
-      seat.heldByUserId = null;
-      seat.holdExpiresAt = null;
-      seat.holdSessionToken = null;
-      seat.version += 1;
-      seat.updatedAt = now.toISOString();
-      store.showSeats.set(seat.id, seat);
-    }
-
-    // Broadcast Real-time event to all clients viewing the seat map
-    realtimeService.broadcastToShow(showId, {
-      type: 'SEAT_BOOKED',
-      showId,
-      seatIds: sortedSeatIds,
-      bookingReference,
-    });
-
-    // Asynchronously dispatch confirmation email with QR code
-    console.log(`[BookingService] Initiating booking confirmation email dispatch:`, {
-      bookingReference,
-      recipientEmail: emailToUse,
-      recipientName: nameToUse,
-      showTitle: show.title,
-      seatLabels,
-      totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
-    });
-
-    EmailService.sendBookingConfirmation({
-      recipientEmail: emailToUse,
-      recipientName: nameToUse,
-      bookingReference,
-      showTitle: show.title,
-      venueName: venue?.name || 'Grand Stage Venue',
-      venueAddress: venue?.address || '',
-      startTime: show.startTime,
-      seatLabels,
-      totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
-      qrCodeDataURL: qrDataURL,
-      qrCodeBuffer: qrBuffer,
-    }).catch((err) => {
-      console.error('[BookingService] Error in async email confirmation dispatch:', err);
-    });
-
-    return {
-      success: true,
-      booking: {
-        ...newBooking,
+      EmailService.sendBookingConfirmation({
+        recipientEmail: emailToUse,
+        recipientName: nameToUse,
+        bookingReference,
         showTitle: show.title,
         venueName: venue?.name || 'Grand Stage Venue',
+        venueAddress: venue?.address || '',
+        startTime: show.startTime,
         seatLabels,
+        totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
         qrCodeDataURL: qrDataURL,
-      },
-    };
+        qrCodeBuffer: qrBuffer,
+      }).catch((err) => {
+        console.error('[BookingService] Error in async email confirmation dispatch:', err);
+      });
+
+      return {
+        success: true,
+        booking: {
+          ...newBooking,
+          showTitle: show.title,
+          venueName: venue?.name || 'Grand Stage Venue',
+          seatLabels,
+          qrCodeDataURL: qrDataURL,
+        },
+      };
+    });
   }
 
   /**

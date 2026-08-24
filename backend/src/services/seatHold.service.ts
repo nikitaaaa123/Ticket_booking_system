@@ -278,8 +278,9 @@ export class SeatHoldService {
 
   /**
    * Helper to execute a callback with acquired in-memory locks for given seats.
+   * Publicly accessible so booking confirmation can execute within the same atomic lock boundary.
    */
-  private static async withSeatLocks<T>(seatIds: string[], fn: () => Promise<T>): Promise<T> {
+  public static async withSeatLocks<T>(seatIds: string[], fn: () => Promise<T>): Promise<T> {
     // Acquire sequential lock promises
     const releaseFns: (() => void)[] = [];
 
@@ -304,5 +305,126 @@ export class SeatHoldService {
         if (rel) rel();
       }
     }
+  }
+
+  /**
+   * Verify an active hold: validates existence, ownership, and non-expiration.
+   * If expired, immediately releases the seats and notifies WebSocket subscribers.
+   */
+  public static async verifyHold(
+    showId: string,
+    showSeatIds: string[],
+    userId?: string,
+    holdSessionToken?: string
+  ): Promise<{
+    valid: boolean;
+    expired?: boolean;
+    expiresAt?: string;
+    remainingSeconds?: number;
+    heldSeatIds?: string[];
+    totalPriceCents?: number;
+    error?: string;
+    message?: string;
+  }> {
+    if (!showSeatIds || showSeatIds.length === 0) {
+      return { valid: false, error: 'ValidationError', message: 'No seats specified.' };
+    }
+
+    const show = store.shows.get(showId);
+    if (!show) {
+      return { valid: false, error: 'NotFound', message: `Show with id ${showId} not found.` };
+    }
+
+    const now = new Date();
+    const sortedSeatIds = [...showSeatIds].sort();
+
+    return await this.withSeatLocks(sortedSeatIds, async () => {
+      let totalPriceCents = 0;
+      let earliestExpiresAt: string | null = null;
+      const expiredSeatIds: string[] = [];
+
+      for (const seatId of sortedSeatIds) {
+        const seat = store.showSeats.get(seatId);
+        if (!seat || seat.showId !== showId) {
+          return { valid: false, error: 'SeatNotFound', message: `Seat ${seatId} not found.` };
+        }
+
+        if (seat.status !== 'HELD') {
+          return {
+            valid: false,
+            expired: true,
+            error: 'HoldExpired',
+            message: 'Your seat hold has expired. Please select the seat again.',
+          };
+        }
+
+        const isExpired = seat.holdExpiresAt && new Date(seat.holdExpiresAt) <= now;
+        if (isExpired) {
+          expiredSeatIds.push(seat.id);
+          continue;
+        }
+
+        const isUserMatch = Boolean(userId && seat.heldByUserId === userId);
+        const isTokenMatch = Boolean(holdSessionToken && seat.holdSessionToken === holdSessionToken);
+
+        if (!isUserMatch && !isTokenMatch) {
+          return {
+            valid: false,
+            error: 'UnauthorizedHold',
+            message: 'Hold was not placed by you or has expired.',
+          };
+        }
+
+        if (!earliestExpiresAt || new Date(seat.holdExpiresAt!) < new Date(earliestExpiresAt)) {
+          earliestExpiresAt = seat.holdExpiresAt!;
+        }
+
+        const pricing = Array.from(store.showPricing.values()).find(
+          (p) => p.showId === showId && p.categoryId === seat.categoryId
+        );
+        totalPriceCents += pricing?.priceCents || 0;
+      }
+
+      // If any seat in the hold has expired, release them all
+      if (expiredSeatIds.length > 0) {
+        for (const expiredId of expiredSeatIds) {
+          const seat = store.showSeats.get(expiredId);
+          if (seat && seat.status === 'HELD') {
+            seat.status = 'AVAILABLE';
+            seat.heldByUserId = null;
+            seat.holdExpiresAt = null;
+            seat.holdSessionToken = null;
+            seat.version += 1;
+            seat.updatedAt = now.toISOString();
+            store.showSeats.set(seat.id, seat);
+          }
+        }
+        realtimeService.broadcastToShow(showId, {
+          type: 'SEAT_RELEASED',
+          showId,
+          seatIds: expiredSeatIds,
+          reason: 'HOLD_EXPIRED',
+        });
+
+        return {
+          valid: false,
+          expired: true,
+          error: 'HoldExpired',
+          message: 'Your seat hold has expired. Please select the seat again.',
+        };
+      }
+
+      const remainingSecs = earliestExpiresAt
+        ? Math.max(0, Math.floor((new Date(earliestExpiresAt).getTime() - now.getTime()) / 1000))
+        : 0;
+
+      return {
+        valid: true,
+        expiresAt: earliestExpiresAt || undefined,
+        remainingSeconds: remainingSecs,
+        heldSeatIds: sortedSeatIds,
+        totalPriceCents,
+      };
+    });
   }
 }

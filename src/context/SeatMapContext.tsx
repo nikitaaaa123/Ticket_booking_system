@@ -25,6 +25,7 @@ interface SeatMapContextType {
   clearSelection: () => void;
   requestHold: () => Promise<boolean>;
   releaseHold: () => Promise<void>;
+  verifyActiveHold: () => Promise<{ valid: boolean; remainingSeconds: number; message?: string }>;
   loadShowSeats: (showId: string, silent?: boolean) => Promise<void>;
   handleSeatEvent: (event: RealtimeSeatEvent) => void;
   joinWaitlist: (
@@ -67,7 +68,13 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return [];
   });
 
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(() => {
+    if (activeHold?.expiresAt) {
+      const diffMs = new Date(activeHold.expiresAt).getTime() - Date.now();
+      return Math.max(0, Math.floor(diffMs / 1000));
+    }
+    return 0;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,6 +99,99 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       if (!silent) {
         setIsLoading(false);
+      }
+    }
+  }, []);
+
+  // Verify active hold against backend server (recovers remaining time on refresh or check)
+  const verifyActiveHold = useCallback(async (): Promise<{ valid: boolean; remainingSeconds: number; message?: string }> => {
+    const currentSavedHold = activeHold || (() => {
+      const saved = localStorage.getItem('tbs_active_hold');
+      return saved ? JSON.parse(saved) : null;
+    })();
+
+    if (!currentSavedHold || !currentSavedHold.showId || !currentSavedHold.heldSeatIds?.length) {
+      return { valid: false, remainingSeconds: 0, message: 'No active hold found' };
+    }
+
+    try {
+      const res = await apiFetch<{
+        valid: boolean;
+        expired?: boolean;
+        expiresAt?: string;
+        remainingSeconds?: number;
+        heldSeatIds?: string[];
+        totalPriceCents?: number;
+        message?: string;
+      }>('/api/seats/verify-hold', {
+        method: 'POST',
+        body: JSON.stringify({
+          showId: currentSavedHold.showId,
+          seatIds: currentSavedHold.heldSeatIds,
+          holdSessionToken: currentSavedHold.holdSessionToken,
+          guestUserId: user ? undefined : guestUserId,
+        }),
+      });
+
+      if (res.valid && res.expiresAt) {
+        const diffMs = new Date(res.expiresAt).getTime() - Date.now();
+        const secs = Math.max(0, Math.floor(diffMs / 1000));
+        setRemainingSeconds(secs);
+
+        const updatedHold: HoldSession = {
+          ...currentSavedHold,
+          expiresAt: res.expiresAt,
+          totalPriceCents: res.totalPriceCents ?? currentSavedHold.totalPriceCents,
+        };
+        setActiveHold(updatedHold);
+        localStorage.setItem('tbs_active_hold', JSON.stringify(updatedHold));
+        return { valid: true, remainingSeconds: secs };
+      } else {
+        // Expired or invalidated on server
+        setActiveHold(null);
+        localStorage.removeItem('tbs_active_hold');
+        setSelectedSeatIds([]);
+        setRemainingSeconds(0);
+        if (currentSavedHold.showId) {
+          loadShowSeats(currentSavedHold.showId, true);
+        }
+        return {
+          valid: false,
+          remainingSeconds: 0,
+          message: res.message || 'Your seat hold has expired. Please select the seat again.',
+        };
+      }
+    } catch (err: any) {
+      console.warn('[SeatMapContext] verifyActiveHold failed:', err);
+      setActiveHold(null);
+      localStorage.removeItem('tbs_active_hold');
+      setSelectedSeatIds([]);
+      setRemainingSeconds(0);
+      return {
+        valid: false,
+        remainingSeconds: 0,
+        message: err.message || 'Your seat hold has expired. Please select the seat again.',
+      };
+    }
+  }, [activeHold, user, guestUserId, loadShowSeats]);
+
+  // Check and verify on initial mount or rehydration
+  useEffect(() => {
+    const saved = localStorage.getItem('tbs_active_hold');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() <= Date.now()) {
+          setActiveHold(null);
+          localStorage.removeItem('tbs_active_hold');
+          setSelectedSeatIds([]);
+          setRemainingSeconds(0);
+        } else {
+          // Check authoritative server state
+          verifyActiveHold();
+        }
+      } catch {
+        localStorage.removeItem('tbs_active_hold');
       }
     }
   }, []);
@@ -362,6 +462,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         clearSelection,
         requestHold,
         releaseHold,
+        verifyActiveHold,
         loadShowSeats,
         handleSeatEvent,
         joinWaitlist,

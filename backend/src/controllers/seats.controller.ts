@@ -200,4 +200,36 @@ export class SeatsController {
       res.status(500).json({ error: 'InternalServerError', message: error.message });
     }
   }
+
+  /**
+   * Endpoint 4: POST Verify Hold Status
+   * Verifies that the hold is active, belongs to the user/session, and returns authoritative remaining TTL.
+   */
+  public static async verifyHold(req: Request, res: Response): Promise<void> {
+    try {
+      const { showId, seatIds, holdSessionToken } = req.body;
+      const userId = req.user?.id || req.body.guestUserId;
+
+      if (!showId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
+        res.status(400).json({
+          valid: false,
+          error: 'ValidationError',
+          message: 'showId and an array of seatIds are required.',
+        });
+        return;
+      }
+
+      const result = await SeatHoldService.verifyHold(showId, seatIds, userId, holdSessionToken);
+
+      if (!result.valid) {
+        const statusCode = result.expired ? 410 : 400;
+        res.status(statusCode).json(result);
+        return;
+      }
+
+      res.status(200).json(result);
+    } catch (error: any) {
+      res.status(500).json({ valid: false, error: 'InternalServerError', message: error.message });
+    }
+  }
 }
