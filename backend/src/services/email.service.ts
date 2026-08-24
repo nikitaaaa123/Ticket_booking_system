@@ -202,7 +202,7 @@ export class EmailService {
               <div style="text-align:center;padding:20px 0 10px;">
                 <div style="font-size:13px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;">Gate Entry QR Pass</div>
                 <div style="display:inline-block;padding:12px;background:#FFFFFF;border:2px solid #E2E8F0;border-radius:12px;">
-                  <img src="cid:qrcode-pass" alt="Ticket Entry QR Code" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;" />
+                  <img src="cid:booking-qr-${data.bookingReference}" alt="Gate Entry QR Pass" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;max-width:220px;height:auto;" />
                 </div>
                 <p style="margin:8px 0 0;font-size:12px;color:#94A3B8;">Pass ID: ${data.bookingReference} &bull; Scan on arrival</p>
               </div>
@@ -303,11 +303,11 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
             ? [
                 {
                   content: qrBase64,
-                  filename: `ticket-${data.bookingReference}.png`,
+                  filename: `gate-pass-${data.bookingReference}.png`,
                   type: 'image/png',
                   disposition: 'inline',
-                  content_id: 'qrcode-pass',
-                  contentId: 'qrcode-pass',
+                  content_id: `booking-qr-${data.bookingReference}`,
+                  contentId: `booking-qr-${data.bookingReference}`,
                 } as any,
               ]
             : [],
@@ -377,9 +377,9 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
           attachments: qrBase64
             ? [
                 {
-                  filename: `ticket-${data.bookingReference}.png`,
+                  filename: `gate-pass-${data.bookingReference}.png`,
                   content: Buffer.from(qrBase64, 'base64'),
-                  cid: 'qrcode-pass',
+                  cid: `booking-qr-${data.bookingReference}`,
                   contentType: 'image/png',
                   contentDisposition: 'inline',
                 },

@@ -16,7 +16,7 @@ export async function apiFetch<T = any>(endpoint: string, options: ApiFetchOptio
     ...(customHeaders as Record<string, string>),
   };
 
-  const storedToken = token || localStorage.getItem('tbs_token');
+  const storedToken = token || sessionStorage.getItem('tbs_token') || localStorage.getItem('tbs_token');
   if (storedToken) {
     headers['Authorization'] = `Bearer ${storedToken}`;
   }

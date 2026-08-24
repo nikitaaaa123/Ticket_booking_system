@@ -157,7 +157,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
         }),
       });
 
-      // Clear hold from local storage
+      // Clear hold from local session
+      sessionStorage.removeItem('tbs_active_hold');
       localStorage.removeItem('tbs_active_hold');
       onBookingSuccess(res.booking);
     } catch (err: any) {

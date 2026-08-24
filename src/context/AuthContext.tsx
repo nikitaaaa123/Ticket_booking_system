@@ -17,12 +17,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('tbs_token'));
+  const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('tbs_token') || localStorage.getItem('tbs_token'));
   const [guestUserId] = useState<string>(() => {
-    const existing = localStorage.getItem('tbs_guest_id');
+    const existing = sessionStorage.getItem('tbs_guest_id');
     if (existing) return existing;
     const newGuest = `guest_${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem('tbs_guest_id', newGuest);
+    sessionStorage.setItem('tbs_guest_id', newGuest);
     return newGuest;
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    localStorage.setItem('tbs_token', res.token);
+    sessionStorage.setItem('tbs_token', res.token);
     setToken(res.token);
     setUser(res.user);
   };
@@ -69,12 +69,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       method: 'POST',
       body: JSON.stringify({ email, password, fullName, role }),
     });
-    localStorage.setItem('tbs_token', res.token);
+    sessionStorage.setItem('tbs_token', res.token);
     setToken(res.token);
     setUser(res.user);
   };
 
   const logout = () => {
+    sessionStorage.removeItem('tbs_token');
     localStorage.removeItem('tbs_token');
     setToken(null);
     setUser(null);

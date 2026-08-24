@@ -49,7 +49,15 @@ export class BookingsController {
       });
 
       if (!result.success) {
-        res.status(400).json({
+        const statusCode =
+          result.error === 'HoldInvalid' ||
+          result.error === 'SeatAlreadyBooked' ||
+          result.error === 'SeatUnavailable'
+            ? 409
+            : result.error === 'HoldExpired'
+            ? 410
+            : 400;
+        res.status(statusCode).json({
           error: result.error || 'BookingFailed',
           message: result.message || 'Unable to confirm booking for the specified seats.',
         });

@@ -88,8 +88,24 @@ export class BookingService {
           return { success: false, error: 'SeatNotFound', message: `Seat ${seatId} not found for show.` };
         }
 
+        if (seat.status === 'BOOKED') {
+          return {
+            success: false,
+            error: 'SeatAlreadyBooked',
+            message: `Seat is already booked by another customer.`,
+          };
+        }
+
+        if (seat.status === 'AVAILABLE') {
+          return {
+            success: false,
+            error: 'SeatNotHeld',
+            message: `Seat ${seatId} is not on hold. Please select and hold the seat first.`,
+          };
+        }
+
         const isExpired = seat.holdExpiresAt && new Date(seat.holdExpiresAt) <= now;
-        if (isExpired || seat.status !== 'HELD') {
+        if (isExpired) {
           // Identify expired seats to release
           for (const sId of sortedSeatIds) {
             const s = store.showSeats.get(sId);
@@ -121,14 +137,14 @@ export class BookingService {
           };
         }
 
-        const isUserMatch = Boolean(userId && seat.heldByUserId === userId);
-        const isTokenMatch = Boolean(holdSessionToken && seat.holdSessionToken === holdSessionToken);
+        const isUserMatch = Boolean(userId && seat.heldByUserId && seat.heldByUserId === userId);
+        const isTokenMatch = Boolean(holdSessionToken && seat.holdSessionToken && seat.holdSessionToken === holdSessionToken);
 
         if (!isUserMatch && !isTokenMatch) {
           return {
             success: false,
             error: 'HoldInvalid',
-            message: `Hold for seat ${seatId} was not placed by you or has expired.`,
+            message: 'Seat is currently held by another customer.',
           };
         }
 

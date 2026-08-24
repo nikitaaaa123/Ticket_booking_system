@@ -47,7 +47,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [seats, setSeats] = useState<ShowSeatDetail[]>([]);
   const [categories, setCategories] = useState<CategorySummary[]>([]);
   const [activeHold, setActiveHold] = useState<HoldSession | null>(() => {
-    const saved = localStorage.getItem('tbs_active_hold');
+    const saved = sessionStorage.getItem('tbs_active_hold');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -55,7 +55,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
           return parsed;
         }
       } catch {
-        localStorage.removeItem('tbs_active_hold');
+        sessionStorage.removeItem('tbs_active_hold');
       }
     }
     return null;
@@ -106,7 +106,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Verify active hold against backend server (recovers remaining time on refresh or check)
   const verifyActiveHold = useCallback(async (): Promise<{ valid: boolean; remainingSeconds: number; message?: string }> => {
     const currentSavedHold = activeHold || (() => {
-      const saved = localStorage.getItem('tbs_active_hold');
+      const saved = sessionStorage.getItem('tbs_active_hold');
       return saved ? JSON.parse(saved) : null;
     })();
 
@@ -144,12 +144,12 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
           totalPriceCents: res.totalPriceCents ?? currentSavedHold.totalPriceCents,
         };
         setActiveHold(updatedHold);
-        localStorage.setItem('tbs_active_hold', JSON.stringify(updatedHold));
+        sessionStorage.setItem('tbs_active_hold', JSON.stringify(updatedHold));
         return { valid: true, remainingSeconds: secs };
       } else {
         // Expired or invalidated on server
         setActiveHold(null);
-        localStorage.removeItem('tbs_active_hold');
+        sessionStorage.removeItem('tbs_active_hold');
         setSelectedSeatIds([]);
         setRemainingSeconds(0);
         if (currentSavedHold.showId) {
@@ -164,7 +164,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } catch (err: any) {
       console.warn('[SeatMapContext] verifyActiveHold failed:', err);
       setActiveHold(null);
-      localStorage.removeItem('tbs_active_hold');
+      sessionStorage.removeItem('tbs_active_hold');
       setSelectedSeatIds([]);
       setRemainingSeconds(0);
       return {
@@ -177,13 +177,13 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Check and verify on initial mount or rehydration
   useEffect(() => {
-    const saved = localStorage.getItem('tbs_active_hold');
+    const saved = sessionStorage.getItem('tbs_active_hold');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() <= Date.now()) {
           setActiveHold(null);
-          localStorage.removeItem('tbs_active_hold');
+          sessionStorage.removeItem('tbs_active_hold');
           setSelectedSeatIds([]);
           setRemainingSeconds(0);
         } else {
@@ -191,7 +191,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
           verifyActiveHold();
         }
       } catch {
-        localStorage.removeItem('tbs_active_hold');
+        sessionStorage.removeItem('tbs_active_hold');
       }
     }
   }, []);
@@ -281,7 +281,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (secs <= 0) {
         // Hold expired
         setActiveHold(null);
-        localStorage.removeItem('tbs_active_hold');
+        sessionStorage.removeItem('tbs_active_hold');
         setSelectedSeatIds([]);
         if (currentShowId) {
           loadShowSeats(currentShowId, true);
@@ -349,7 +349,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
           totalPriceCents: res.totalPriceCents,
         };
         setActiveHold(holdData);
-        localStorage.setItem('tbs_active_hold', JSON.stringify(holdData));
+        sessionStorage.setItem('tbs_active_hold', JSON.stringify(holdData));
         setSelectedSeatIds(res.heldSeatIds || selectedSeatIds);
         return true;
       }
@@ -381,7 +381,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.warn('Could not cleanly release hold:', e);
     } finally {
       setActiveHold(null);
-      localStorage.removeItem('tbs_active_hold');
+      sessionStorage.removeItem('tbs_active_hold');
       setSelectedSeatIds([]);
       if (currentShowId) {
         loadShowSeats(currentShowId, true);
