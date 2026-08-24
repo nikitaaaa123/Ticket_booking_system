@@ -93,6 +93,9 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Real-time surgical seat event handler (updates state in-place without resetting selection)
   const handleSeatEvent = useCallback((event: RealtimeSeatEvent) => {
     if (!event) return;
+    if (event.showId && currentShowId && event.showId !== currentShowId) {
+      return;
+    }
 
     setSeats((prevSeats) => {
       if (!event.seatIds || event.seatIds.length === 0) return prevSeats;
@@ -139,7 +142,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setSelectedSeatIds((prev) => prev.filter((id) => !bookedSet.has(id)));
       }
     }
-  }, [currentEffectiveUserId]);
+  }, [currentShowId, currentEffectiveUserId]);
 
   // Countdown timer for active hold
   useEffect(() => {

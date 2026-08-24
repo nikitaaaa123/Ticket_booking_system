@@ -4,7 +4,7 @@ import { RealtimeSeatEvent } from '../types/index.ts';
 
 interface ClientConnection {
   ws: WebSocket;
-  showId: string | null;
+  rooms: Set<string>;
   userId?: string;
   subscribedAt: Date;
 }
@@ -19,7 +19,7 @@ class RealtimeService {
     this.wss.on('connection', (ws: WebSocket) => {
       const clientInfo: ClientConnection = {
         ws,
-        showId: null,
+        rooms: new Set<string>(),
         subscribedAt: new Date(),
       };
       this.clients.set(ws, clientInfo);
@@ -35,17 +35,27 @@ class RealtimeService {
         try {
           const payload = JSON.parse(rawMessage.toString());
           const action = (payload.action || '').toUpperCase();
-          if ((action === 'SUBSCRIBE_SHOW' || action === 'SUBSCRIBE') && payload.showId) {
-            clientInfo.showId = payload.showId;
+          const targetShowId = payload.showId || payload.roomId;
+
+          if ((action === 'SUBSCRIBE_SHOW' || action === 'SUBSCRIBE' || action === 'JOIN_ROOM') && targetShowId) {
+            clientInfo.rooms.add(targetShowId);
             if (payload.userId) clientInfo.userId = payload.userId;
+
+            console.log(`[RealtimeService] Client joined room "show:${targetShowId}" (Active rooms: ${Array.from(clientInfo.rooms).join(', ')})`);
 
             this.safeSend(ws, {
               type: 'SUBSCRIBED',
-              showId: payload.showId,
-              message: `Subscribed to real-time seat updates for show ${payload.showId}`,
+              showId: targetShowId,
+              message: `Subscribed to real-time seat updates for show ${targetShowId}`,
             });
-          } else if (action === 'UNSUBSCRIBE' || action === 'UNSUBSCRIBE_SHOW') {
-            clientInfo.showId = null;
+          } else if (action === 'UNSUBSCRIBE' || action === 'UNSUBSCRIBE_SHOW' || action === 'LEAVE_ROOM') {
+            if (targetShowId) {
+              clientInfo.rooms.delete(targetShowId);
+              console.log(`[RealtimeService] Client left room "show:${targetShowId}"`);
+            } else {
+              clientInfo.rooms.clear();
+              console.log(`[RealtimeService] Client left all rooms`);
+            }
           } else if (action === 'PING') {
             this.safeSend(ws, { type: 'PONG', timestamp: Date.now() });
           }
@@ -67,18 +77,21 @@ class RealtimeService {
   }
 
   /**
-   * Broadcast an event to all connected clients actively viewing a specific show
+   * Broadcast an event strictly to connected clients in that specific show's room
    */
   public broadcastToShow(showId: string, event: RealtimeSeatEvent | any): void {
     const payload = JSON.stringify({
       ...event,
+      showId,
       timestamp: new Date().toISOString(),
     });
 
+    let deliveredCount = 0;
     for (const [ws, client] of this.clients.entries()) {
-      if (client.showId === showId && ws.readyState === WebSocket.OPEN) {
+      if (client.rooms.has(showId) && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(payload);
+          deliveredCount++;
         } catch (err) {
           console.error('[RealtimeService] Failed to send WS message to client:', err);
         }
@@ -109,7 +122,7 @@ class RealtimeService {
   public getActiveSubscribersCount(showId: string): number {
     let count = 0;
     for (const client of this.clients.values()) {
-      if (client.showId === showId && client.ws.readyState === WebSocket.OPEN) {
+      if (client.rooms.has(showId) && client.ws.readyState === WebSocket.OPEN) {
         count++;
       }
     }

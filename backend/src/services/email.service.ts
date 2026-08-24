@@ -31,9 +31,29 @@ export interface WaitlistOfferEmailData {
 
 export class EmailService {
   private static transporter: nodemailer.Transporter | null = null;
+  private static isInitialized = false;
+
+  public static initLogging(): void {
+    if (this.isInitialized) return;
+    this.isInitialized = true;
+
+    console.log('[EmailService] Mailer Service Initialized:');
+    console.log(`  - Provider: ${config.emailProvider}`);
+    console.log(`  - SMTP Host: ${config.smtpHost || '(none - stream transport active)'}`);
+    console.log(`  - SMTP Port: ${config.smtpPort}`);
+    console.log(`  - SMTP User: ${config.smtpUser ? config.smtpUser.slice(0, 3) + '***' : '(none)'}`);
+    console.log(`  - From: "${config.emailFromName}" <${config.emailFromAddress}>`);
+    if (config.smtpHost && config.smtpUser && config.smtpPass) {
+      console.log('  - Mode: PRODUCTION SMTP READY');
+    } else {
+      console.log('  - Mode: LOCAL STREAM / SANDBOX (Console Output)');
+    }
+  }
 
   private static getTransporter(): nodemailer.Transporter {
     if (!this.transporter) {
+      this.initLogging();
+
       if (config.smtpHost && config.smtpUser && config.smtpPass) {
         // Production SMTP (Gmail App Password, Resend SMTP, SendGrid, Amazon SES, etc.)
         this.transporter = nodemailer.createTransport({
@@ -43,6 +63,9 @@ export class EmailService {
           auth: {
             user: config.smtpUser,
             pass: config.smtpPass,
+          },
+          tls: {
+            rejectUnauthorized: false,
           },
         });
       } else {
@@ -144,7 +167,7 @@ export class EmailService {
               <div style="text-align:center;padding:20px 0 10px;">
                 <div style="font-size:13px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;">Gate Entry QR Pass</div>
                 <div style="display:inline-block;padding:12px;background:#FFFFFF;border:2px solid #E2E8F0;border-radius:12px;">
-                  <img src="${data.qrCodeDataURL}" alt="Ticket Entry QR Code" width="220" height="220" style="display:block;border-radius:4px;" />
+                  <img src="${data.qrCodeBuffer ? 'cid:qrcode-pass' : data.qrCodeDataURL}" alt="Ticket Entry QR Code" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;" />
                 </div>
                 <p style="margin:8px 0 0;font-size:12px;color:#94A3B8;">Pass ID: ${data.bookingReference} &bull; Scan on arrival</p>
               </div>
@@ -171,13 +194,15 @@ export class EmailService {
   /**
    * Sends booking confirmation email via configured SMTP or outputs debug stream
    */
-  public static async sendBookingConfirmation(data: BookingEmailData): Promise<{ success: boolean; messageId?: string }> {
+  public static async sendBookingConfirmation(data: BookingEmailData): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       const transporter = this.getTransporter();
       const htmlContent = this.renderBookingConfirmationHTML(data);
 
+      console.log(`[EmailService] Preparing booking confirmation email for ${data.recipientEmail} (Ref: ${data.bookingReference})...`);
+
       const mailOptions: nodemailer.SendMailOptions = {
-        from: `"${config.emailFromName}" <${config.emailFromAddress}>`,
+        from: config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`,
         to: data.recipientEmail,
         subject: `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`,
         html: htmlContent,
@@ -186,7 +211,9 @@ export class EmailService {
               {
                 filename: `ticket-${data.bookingReference}.png`,
                 content: data.qrCodeBuffer,
-                cid: 'qrcode-pass', // Enables CID reference <img src="cid:qrcode-pass" /> if needed
+                cid: 'qrcode-pass',
+                contentType: 'image/png',
+                contentDisposition: 'inline',
               },
             ]
           : [],
@@ -194,10 +221,23 @@ export class EmailService {
 
       const info = await transporter.sendMail(mailOptions);
       console.log(`[EmailService] Sent confirmation email to ${data.recipientEmail} [MessageID: ${info.messageId || 'sandbox-stream'}]`);
+      if (info.message) {
+        console.log(`[EmailService Sandbox Message Generated] To: ${data.recipientEmail}, Ref: ${data.bookingReference}`);
+      }
       return { success: true, messageId: info.messageId };
     } catch (error: any) {
-      console.error('[EmailService] Failed to send email:', error.message);
-      return { success: false };
+      console.error('[EmailService] SMTP Error sending booking confirmation:', {
+        message: error.message,
+        code: error.code,
+        command: error.command,
+        response: error.response,
+        responseCode: error.responseCode,
+        host: config.smtpHost,
+        port: config.smtpPort,
+        user: config.smtpUser ? `${config.smtpUser.slice(0, 3)}***` : undefined,
+        stack: error.stack,
+      });
+      return { success: false, error: error.message };
     }
   }
 

@@ -87,6 +87,12 @@ export function useSeatMapWebSocket({
               return;
             }
 
+            // Scoping Isolation: Discard seat events for any show other than the active showId
+            if (payload.showId && payload.showId !== showId) {
+              console.debug(`[WebSocket] Ignored seat update for show ${payload.showId} while viewing show ${showId}`);
+              return;
+            }
+
             setLastEvent(payload);
 
             if (onSeatEventRef.current) {

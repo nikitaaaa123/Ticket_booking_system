@@ -11,6 +11,7 @@ import bookingRoutes from './backend/src/routes/booking.routes.ts';
 import waitlistRoutes from './backend/src/routes/waitlist.routes.ts';
 import { realtimeService } from './backend/src/services/realtime.service.ts';
 import { holdExpiryJob } from './backend/src/jobs/holdExpiryJob.ts';
+import { EmailService } from './backend/src/services/email.service.ts';
 
 async function startServer() {
   const app = express();
@@ -19,6 +20,9 @@ async function startServer() {
 
   // Initialize Real-time WebSockets on /ws
   realtimeService.init(server);
+
+  // Initialize and verify mailer setup
+  EmailService.initLogging();
 
   // Start background TTL sweeper for seat holds
   holdExpiryJob.start();
