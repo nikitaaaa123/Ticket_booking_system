@@ -127,6 +127,12 @@ export interface Booking {
   currency: string;
   qrCodeDataURL?: string;
   items: BookingItem[];
+  emailDelivery?: {
+    sent: boolean;
+    message: string;
+    statusCode?: number;
+    error?: string;
+  };
   cancellationReason?: string | null;
   cancelledAt?: string | null;
   confirmedAt?: string;

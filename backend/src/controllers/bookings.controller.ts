@@ -45,8 +45,9 @@ export class BookingsController {
       }
 
       res.status(201).json({
-        message: 'Booking confirmed successfully',
+        message: result.message || 'Booking confirmed successfully',
         booking: result.booking,
+        emailDelivery: result.emailDelivery,
       });
     } catch (error: any) {
       res.status(500).json({ error: 'InternalServerError', message: error.message });

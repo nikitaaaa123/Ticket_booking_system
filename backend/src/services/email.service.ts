@@ -1,5 +1,7 @@
+import sgMail from '@sendgrid/mail';
 import nodemailer from 'nodemailer';
-import { config } from '../config/env.ts';
+import { getEmailConfig } from '../config/env.ts';
+import { Booking } from '../types/index.ts';
 
 export interface BookingEmailData {
   recipientEmail: string;
@@ -29,6 +31,34 @@ export interface WaitlistOfferEmailData {
   claimUrl: string;
 }
 
+export interface EmailDispatchResult {
+  success: boolean;
+  sent: boolean;
+  provider: 'sendgrid' | 'smtp' | 'sandbox';
+  messageId?: string;
+  statusCode?: number;
+  message: string;
+  error?: string;
+}
+
+/**
+ * Validates and normalizes recipient email addresses
+ */
+export function validateRecipientEmail(rawEmail?: string | null): { valid: boolean; email: string; error?: string } {
+  if (!rawEmail || typeof rawEmail !== 'string') {
+    return { valid: false, email: '', error: 'Recipient email address is required and cannot be empty.' };
+  }
+
+  const trimmed = rawEmail.trim().toLowerCase();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailRegex.test(trimmed)) {
+    return { valid: false, email: trimmed, error: `Invalid recipient email address format: "${trimmed}".` };
+  }
+
+  return { valid: true, email: trimmed };
+}
+
 export class EmailService {
   private static transporter: nodemailer.Transporter | null = null;
   private static isInitialized = false;
@@ -37,39 +67,47 @@ export class EmailService {
     if (this.isInitialized) return;
     this.isInitialized = true;
 
-    console.log('[EmailService] Mailer Service Initialized:');
-    console.log(`  - Provider: ${config.emailProvider}`);
-    console.log(`  - SMTP Host: ${config.smtpHost || '(none - stream transport active)'}`);
-    console.log(`  - SMTP Port: ${config.smtpPort}`);
-    console.log(`  - SMTP User: ${config.smtpUser ? config.smtpUser.slice(0, 3) + '***' : '(none)'}`);
-    console.log(`  - From: "${config.emailFromName}" <${config.emailFromAddress}>`);
-    if (config.smtpHost && config.smtpUser && config.smtpPass) {
-      console.log('  - Mode: PRODUCTION SMTP READY');
+    const envConfig = getEmailConfig();
+    const hasSendGridKey = Boolean(envConfig.sendgridApiKey);
+    const maskedKey = hasSendGridKey
+      ? `${envConfig.sendgridApiKey.substring(0, 4)}***${envConfig.sendgridApiKey.slice(-4)}`
+      : 'not set';
+
+    console.log('[EmailService] Mailer Service Configuration:');
+    console.log(`  - SendGrid Configured: ${hasSendGridKey ? 'YES' : 'NO'} (${maskedKey})`);
+    console.log(`  - Sender Name (EMAIL_FROM_NAME): "${envConfig.emailFromName}"`);
+    console.log(`  - Sender Address (EMAIL_FROM_ADDRESS): <${envConfig.emailFromAddress}>`);
+    if (hasSendGridKey) {
+      console.log('  - Active Email Provider: SENDGRID REST API');
+    } else if (envConfig.smtpHost && envConfig.smtpUser && envConfig.smtpPass) {
+      console.log(`  - Active Email Provider: PRODUCTION SMTP (${envConfig.smtpHost}:${envConfig.smtpPort})`);
     } else {
-      console.log('  - Mode: LOCAL STREAM / SANDBOX (Console Output)');
+      console.log('  - Active Email Provider: LOCAL SANDBOX / STREAM (Console logs for local testing)');
     }
   }
 
+  /**
+   * Helper to retrieve SMTP transporter if SMTP credentials are provided
+   */
   private static getTransporter(): nodemailer.Transporter {
-    if (!this.transporter) {
-      this.initLogging();
+    const envConfig = getEmailConfig();
 
-      if (config.smtpHost && config.smtpUser && config.smtpPass) {
-        // Production SMTP (Gmail App Password, Resend SMTP, SendGrid, Amazon SES, etc.)
+    if (!this.transporter) {
+      if (envConfig.smtpHost && envConfig.smtpUser && envConfig.smtpPass) {
         this.transporter = nodemailer.createTransport({
-          host: config.smtpHost,
-          port: config.smtpPort,
-          secure: config.smtpPort === 465,
+          host: envConfig.smtpHost,
+          port: envConfig.smtpPort,
+          secure: envConfig.smtpPort === 465,
           auth: {
-            user: config.smtpUser,
-            pass: config.smtpPass,
+            user: envConfig.smtpUser,
+            pass: envConfig.smtpPass,
           },
           tls: {
             rejectUnauthorized: false,
           },
         });
       } else {
-        // Fallback / Sandbox logging transporter when env vars are not configured
+        // Fallback / Sandbox logging transporter
         this.transporter = nodemailer.createTransport({
           streamTransport: true,
           newline: 'unix',
@@ -81,7 +119,7 @@ export class EmailService {
   }
 
   /**
-   * Render clean, responsive HTML email template with embedded QR code
+   * Render clean, responsive HTML email template with embedded/CID QR code
    */
   public static renderBookingConfirmationHTML(data: BookingEmailData): string {
     const formattedDate = new Date(data.startTime).toLocaleString('en-US', {
@@ -167,7 +205,7 @@ export class EmailService {
               <div style="text-align:center;padding:20px 0 10px;">
                 <div style="font-size:13px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;">Gate Entry QR Pass</div>
                 <div style="display:inline-block;padding:12px;background:#FFFFFF;border:2px solid #E2E8F0;border-radius:12px;">
-                  <img src="${data.qrCodeBuffer ? 'cid:qrcode-pass' : data.qrCodeDataURL}" alt="Ticket Entry QR Code" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;" />
+                  <img src="cid:qrcode-pass" alt="Ticket Entry QR Code" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;" />
                 </div>
                 <p style="margin:8px 0 0;font-size:12px;color:#94A3B8;">Pass ID: ${data.bookingReference} &bull; Scan on arrival</p>
               </div>
@@ -178,7 +216,7 @@ export class EmailService {
           <!-- Footer -->
           <tr>
             <td style="background-color:#F8FAFC;padding:24px 32px;border-top:1px solid #E2E8F0;text-align:center;font-size:13px;color:#94A3B8;line-height:1.5;">
-              Questions about this booking? Need to cancel or reschedule? Visit your booking management dashboard anytime.<br>
+              Questions about this booking? Need assistance? Visit your booking management dashboard anytime.<br>
               &copy; ${new Date().getFullYear()} Ticket Booking System. All rights reserved.
             </td>
           </tr>
@@ -188,17 +226,43 @@ export class EmailService {
   </table>
 </body>
 </html>
-`;
+`.trim();
   }
 
   /**
-   * Sends booking confirmation email via configured SMTP or outputs debug stream
+   * Primary method to send booking confirmation email via SendGrid or fallback transport
    */
-  public static async sendBookingConfirmation(data: BookingEmailData): Promise<{ success: boolean; messageId?: string; error?: string }> {
-    try {
-      const transporter = this.getTransporter();
-      const htmlContent = this.renderBookingConfirmationHTML(data);
-      const textContent = `
+  public static async sendBookingConfirmation(data: BookingEmailData): Promise<EmailDispatchResult> {
+    const envConfig = getEmailConfig();
+    const emailValidation = validateRecipientEmail(data.recipientEmail);
+
+    if (!emailValidation.valid) {
+      console.warn('[EmailService] Recipient email validation failed:', {
+        recipientEmail: data.recipientEmail,
+        error: emailValidation.error,
+      });
+      return {
+        success: false,
+        sent: false,
+        provider: 'sandbox',
+        error: emailValidation.error,
+        message: `Booking confirmed, but confirmation email could not be sent: ${emailValidation.error}`,
+      };
+    }
+
+    const recipientEmail = emailValidation.email;
+    const recipientName = (data.recipientName || 'Valued Customer').trim();
+    const senderEmail = envConfig.emailFromAddress;
+    const senderName = envConfig.emailFromName;
+    const subject = `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`;
+
+    const htmlContent = this.renderBookingConfirmationHTML({
+      ...data,
+      recipientEmail,
+      recipientName,
+    });
+
+    const textContent = `
 Booking Confirmed!
 Booking Reference: ${data.bookingReference}
 
@@ -209,69 +273,180 @@ ${data.venueAddress ? `Address: ${data.venueAddress}\n` : ''}Seats: ${data.seatL
 Total Paid: ${data.totalAmountFormatted}
 
 Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingReference} at gate entrance.
-      `.trim();
+`.trim();
 
-      const fromAddress = config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`;
-
-      console.log(`[EmailService] Preparing booking confirmation dispatch:`, {
-        from: fromAddress,
-        to: data.recipientEmail,
-        recipientName: data.recipientName,
-        subject: `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`,
-        contentTypes: 'text/html + text/plain (multi-part MIME with inline QR attachment)',
-        htmlLength: htmlContent.length,
-        textLength: textContent.length,
-        hasQrBuffer: !!data.qrCodeBuffer,
-      });
-
-      const mailOptions: nodemailer.SendMailOptions = {
-        from: fromAddress,
-        to: data.recipientEmail,
-        subject: `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`,
-        text: textContent,
-        html: htmlContent,
-        attachments: data.qrCodeBuffer
-          ? [
-              {
-                filename: `ticket-${data.bookingReference}.png`,
-                content: data.qrCodeBuffer,
-                cid: 'qrcode-pass',
-                contentType: 'image/png',
-                contentDisposition: 'inline',
-              },
-            ]
-          : [],
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-
-      console.log(`[EmailService] SMTP Server Accepted Dispatch:`, {
-        to: data.recipientEmail,
-        messageId: info.messageId || 'sandbox-stream',
-        response: info.response,
-        accepted: info.accepted,
-        rejected: info.rejected,
-        envelope: info.envelope,
-      });
-
-      if (info.message) {
-        console.log(`[EmailService Sandbox Message Generated] To: ${data.recipientEmail}, Ref: ${data.bookingReference}`);
-      }
-      return { success: true, messageId: info.messageId };
-    } catch (error: any) {
-      console.error('[EmailService] SMTP Error sending booking confirmation:', {
-        message: error.message,
-        code: error.code,
-        command: error.command,
-        response: error.response,
-        responseCode: error.responseCode,
-        host: config.smtpHost,
-        port: config.smtpPort,
-        user: config.smtpUser ? `${config.smtpUser.slice(0, 3)}***` : undefined,
-        stack: error.stack,
-      });
-      return { success: false, error: error.message };
+    // Prepare QR Code base64 data for attachment/CID inline embedding
+    let qrBase64 = '';
+    if (data.qrCodeBuffer && Buffer.isBuffer(data.qrCodeBuffer)) {
+      qrBase64 = data.qrCodeBuffer.toString('base64');
+    } else if (data.qrCodeDataURL) {
+      qrBase64 = data.qrCodeDataURL.replace(/^data:image\/[a-z]+;base64,/, '');
     }
+
+    // 1. SendGrid API Delivery Flow
+    if (envConfig.sendgridApiKey) {
+      const apiKey = envConfig.sendgridApiKey;
+      const maskedKey = apiKey.length > 8 ? `${apiKey.substring(0, 4)}***${apiKey.slice(-4)}` : '***';
+
+      console.log('[EmailService] Dispatching confirmation email via SendGrid API:', {
+        hasSendGridApiKey: true,
+        keyPrefix: maskedKey,
+        senderEmail,
+        senderName,
+        recipientEmail,
+        subject,
+        hasQrAttachment: Boolean(qrBase64),
+      });
+
+      try {
+        sgMail.setApiKey(apiKey);
+
+        const msg: sgMail.MailDataRequired = {
+          to: recipientEmail,
+          from: {
+            email: senderEmail,
+            name: senderName,
+          },
+          subject,
+          text: textContent,
+          html: htmlContent,
+          attachments: qrBase64
+            ? [
+                {
+                  content: qrBase64,
+                  filename: `ticket-${data.bookingReference}.png`,
+                  type: 'image/png',
+                  disposition: 'inline',
+                  content_id: 'qrcode-pass',
+                  contentId: 'qrcode-pass',
+                } as any,
+              ]
+            : [],
+        };
+
+        const [response] = await sgMail.send(msg);
+
+        console.log('[EmailService] SendGrid API Accepted Dispatch:', {
+          statusCode: response.statusCode,
+          recipientEmail,
+          senderEmail,
+          messageId: (response.headers && response.headers['x-message-id']) || 'sendgrid-accepted',
+        });
+
+        return {
+          success: true,
+          sent: true,
+          provider: 'sendgrid',
+          statusCode: response.statusCode,
+          messageId: (response.headers && response.headers['x-message-id']) as string,
+          message: 'Booking confirmed and confirmation email sent.',
+        };
+      } catch (error: any) {
+        const statusCode = error.code || error.response?.statusCode || error.response?.status || 500;
+        const errorBody = error.response?.body || error.response?.data;
+        const errorMessage = error.message || 'SendGrid API delivery failed';
+
+        console.error('[EmailService] SendGrid API Error delivering confirmation email:', {
+          hasSendGridApiKey: true,
+          keyPrefix: maskedKey,
+          senderEmail,
+          recipientEmail,
+          statusCode,
+          errorMessage,
+          errorBody: JSON.stringify(errorBody),
+        });
+
+        const detailMsg = errorBody?.errors?.[0]?.message || errorMessage;
+        return {
+          success: false,
+          sent: false,
+          provider: 'sendgrid',
+          statusCode,
+          error: detailMsg,
+          message: `Booking confirmed, but confirmation email could not be sent: ${detailMsg}`,
+        };
+      }
+    }
+
+    // 2. SMTP Production Transport Flow
+    if (envConfig.smtpHost && envConfig.smtpUser && envConfig.smtpPass) {
+      console.log('[EmailService] Dispatching confirmation email via SMTP transport:', {
+        hasSendGridApiKey: false,
+        smtpHost: envConfig.smtpHost,
+        smtpPort: envConfig.smtpPort,
+        senderEmail,
+        recipientEmail,
+        subject,
+      });
+
+      try {
+        const transporter = this.getTransporter();
+        const info = await transporter.sendMail({
+          from: envConfig.emailFrom,
+          to: recipientEmail,
+          subject,
+          text: textContent,
+          html: htmlContent,
+          attachments: qrBase64
+            ? [
+                {
+                  filename: `ticket-${data.bookingReference}.png`,
+                  content: Buffer.from(qrBase64, 'base64'),
+                  cid: 'qrcode-pass',
+                  contentType: 'image/png',
+                  contentDisposition: 'inline',
+                },
+              ]
+            : [],
+        });
+
+        console.log('[EmailService] SMTP Server Accepted Dispatch:', {
+          recipientEmail,
+          messageId: info.messageId,
+          response: info.response,
+        });
+
+        return {
+          success: true,
+          sent: true,
+          provider: 'smtp',
+          messageId: info.messageId,
+          message: 'Booking confirmed and confirmation email sent.',
+        };
+      } catch (error: any) {
+        console.error('[EmailService] SMTP Error delivering confirmation email:', {
+          senderEmail,
+          recipientEmail,
+          errorMessage: error.message,
+          code: error.code,
+        });
+
+        return {
+          success: false,
+          sent: false,
+          provider: 'smtp',
+          error: error.message,
+          message: `Booking confirmed, but confirmation email could not be sent: ${error.message}`,
+        };
+      }
+    }
+
+    // 3. Fallback / Sandbox Logging Mode (when SENDGRID_API_KEY and SMTP credentials are not configured)
+    console.log('[EmailService] SENDGRID_API_KEY is not configured. Running in Local Sandbox / Console Log mode.');
+    console.log('[EmailService] [Sandbox Preview]', {
+      hasSendGridApiKey: false,
+      senderEmail,
+      recipientEmail,
+      subject,
+      bookingReference: data.bookingReference,
+    });
+
+    return {
+      success: true,
+      sent: false,
+      provider: 'sandbox',
+      message: 'Booking confirmed, but email delivery is in sandbox mode (SENDGRID_API_KEY not configured).',
+    };
   }
 
   /**
@@ -366,10 +541,6 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
                 If the button above does not work, visit: <br>
                 <a href="${data.claimUrl}" style="color:#2563EB;word-break:break-all;">${data.claimUrl}</a>
               </p>
-
-              <p style="margin:24px 0 0;font-size:13px;line-height:1.5;color:#64748B;border-top:1px solid #E2E8F0;padding-top:16px;">
-                <strong>Note:</strong> If you do not claim this ticket before the deadline, it will automatically be offered to the next person in line.
-              </p>
             </td>
           </tr>
 
@@ -386,50 +557,133 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
   </table>
 </body>
 </html>
-`;
+`.trim();
   }
 
   /**
    * Sends waitlist offer email with direct checkout link
    */
   public static async sendWaitlistOffer(data: WaitlistOfferEmailData): Promise<{ success: boolean; messageId?: string }> {
-    try {
-      const transporter = this.getTransporter();
-      const htmlContent = this.renderWaitlistOfferHTML(data);
-      const textContent = `
+    const envConfig = getEmailConfig();
+    const emailValidation = validateRecipientEmail(data.recipientEmail);
+
+    if (!emailValidation.valid) {
+      console.warn('[EmailService] Invalid recipient email for waitlist offer:', data.recipientEmail);
+      return { success: false };
+    }
+
+    const recipientEmail = emailValidation.email;
+    const recipientName = (data.recipientName || 'Valued Customer').trim();
+    const senderEmail = envConfig.emailFromAddress;
+    const senderName = envConfig.emailFromName;
+    const subject = `Seat Available! Claim your ticket for ${data.showTitle} before it expires`;
+    const htmlContent = this.renderWaitlistOfferHTML({ ...data, recipientEmail, recipientName });
+    const textContent = `
 A seat just opened up for ${data.showTitle}!
 
-Hello ${data.recipientName},
+Hello ${recipientName},
 Good news! A seat (${data.seatLabel}) has become available for you for ${data.showTitle} at ${data.venueName} (${data.priceFormatted}).
 
 Claim your ticket before the expiration deadline:
 ${data.claimUrl}
 
 If you do not claim it in time, it will automatically be offered to the next waitlist candidate.
-      `.trim();
+`.trim();
 
-      const fromAddress = config.emailFrom || `"${config.emailFromName}" <${config.emailFromAddress}>`;
+    if (envConfig.sendgridApiKey) {
+      try {
+        sgMail.setApiKey(envConfig.sendgridApiKey);
+        const [response] = await sgMail.send({
+          to: recipientEmail,
+          from: {
+            email: senderEmail,
+            name: senderName,
+          },
+          subject,
+          text: textContent,
+          html: htmlContent,
+        });
 
-      const mailOptions: nodemailer.SendMailOptions = {
-        from: fromAddress,
-        to: data.recipientEmail,
-        subject: `Seat Available! Claim your ticket for ${data.showTitle} before it expires`,
-        text: textContent,
-        html: htmlContent,
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`[EmailService] SMTP Server Accepted Waitlist Offer:`, {
-        to: data.recipientEmail,
-        messageId: info.messageId || 'sandbox-stream',
-        response: info.response,
-        accepted: info.accepted,
-        rejected: info.rejected,
-      });
-      return { success: true, messageId: info.messageId };
-    } catch (error: any) {
-      console.error('[EmailService] Failed to send waitlist email:', error.message);
-      return { success: false };
+        console.log('[EmailService] SendGrid Accepted Waitlist Offer:', {
+          statusCode: response.statusCode,
+          recipientEmail,
+          senderEmail,
+        });
+        return { success: true, messageId: (response.headers && response.headers['x-message-id']) as string };
+      } catch (error: any) {
+        console.error('[EmailService] SendGrid Waitlist Offer Error:', {
+          errorMessage: error.message,
+          errorBody: error.response?.body,
+        });
+        return { success: false };
+      }
     }
+
+    if (envConfig.smtpHost && envConfig.smtpUser && envConfig.smtpPass) {
+      try {
+        const transporter = this.getTransporter();
+        const info = await transporter.sendMail({
+          from: envConfig.emailFrom,
+          to: recipientEmail,
+          subject,
+          text: textContent,
+          html: htmlContent,
+        });
+        return { success: true, messageId: info.messageId };
+      } catch (error: any) {
+        console.error('[EmailService] SMTP Waitlist Offer Error:', error.message);
+        return { success: false };
+      }
+    }
+
+    console.log(`[EmailService Sandbox] Waitlist Offer generated for ${recipientEmail}, claimUrl: ${data.claimUrl}`);
+    return { success: true, messageId: 'sandbox-waitlist-offer' };
   }
+}
+
+/**
+ * Standalone reusable function to send booking confirmation emails
+ * Strictly invoked ONLY after the booking has been successfully created and committed.
+ */
+export async function sendBookingConfirmationEmail(
+  booking: Booking,
+  customer: { email?: string; name?: string },
+  showDetails?: {
+    showTitle?: string;
+    venueName?: string;
+    venueAddress?: string;
+    startTime?: string;
+    seatLabels?: string[];
+    qrCodeDataURL?: string;
+    qrCodeBuffer?: Buffer;
+  }
+): Promise<EmailDispatchResult> {
+  const recipientEmail = customer.email || booking.customerEmail || '';
+  const recipientName = customer.name || booking.customerName || 'Valued Customer';
+  const showTitle = showDetails?.showTitle || (booking as any).showTitle || 'Event Performance';
+  const venueName = showDetails?.venueName || (booking as any).venueName || 'Grand Stage Venue';
+  const venueAddress = showDetails?.venueAddress || '';
+  const startTime = showDetails?.startTime || (booking as any).showStartTime || booking.createdAt || new Date().toISOString();
+  const seatLabels =
+    showDetails?.seatLabels ||
+    (booking.items && booking.items.length > 0
+      ? booking.items.map((item) => item.seatLabel)
+      : ['General Admission']);
+  const totalAmountFormatted = `$${(booking.totalAmountCents / 100).toFixed(2)}`;
+  const qrCodeDataURL = showDetails?.qrCodeDataURL || booking.qrCodeDataURL || '';
+  const qrCodeBuffer = showDetails?.qrCodeBuffer;
+
+  return await EmailService.sendBookingConfirmation({
+    recipientEmail,
+    recipientName,
+    bookingReference: booking.bookingReference,
+    showTitle,
+    venueName,
+    venueAddress,
+    startTime,
+    seatLabels,
+    totalAmountFormatted,
+    qrCodeDataURL,
+    qrCodeBuffer,
+  });
 }

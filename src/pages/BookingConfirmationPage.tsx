@@ -11,6 +11,8 @@ import {
   Ticket,
   Printer,
   Sparkles,
+  AlertTriangle,
+  Send,
 } from 'lucide-react';
 
 interface BookingConfirmationPageProps {
@@ -31,6 +33,9 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
       })
     : new Date().toLocaleString();
 
+  const isEmailSent = booking.emailDelivery ? booking.emailDelivery.sent : true;
+  const emailStatusMessage = booking.emailDelivery?.message;
+
   return (
     <div id="booking-confirmation-page" className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
       {/* Success Badge */}
@@ -44,10 +49,30 @@ export const BookingConfirmationPage: React.FC<BookingConfirmationPageProps> = (
         <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
           You're Going Live!
         </h1>
-        <p className="text-sm text-slate-400 max-w-md mx-auto">
-          We have sent your confirmation receipt and digital gate passes to{' '}
-          <strong className="text-white">{booking.customerEmail}</strong>.
-        </p>
+
+        {/* Dynamic Email Delivery Status */}
+        {isEmailSent ? (
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-xs text-emerald-300 max-w-lg mx-auto">
+            <Mail className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <span>
+              Confirmation receipt and digital gate pass sent to{' '}
+              <strong className="text-white">{booking.customerEmail}</strong>.
+            </span>
+          </div>
+        ) : (
+          <div className="p-4 rounded-2xl bg-amber-950/80 border border-amber-700/80 text-left max-w-lg mx-auto text-amber-200 text-xs space-y-1 shadow-lg">
+            <div className="flex items-center gap-2 font-bold text-amber-300">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+              <span>Email Delivery Notice</span>
+            </div>
+            <p className="text-slate-300 pl-6">
+              {emailStatusMessage || 'Booking confirmed, but confirmation email could not be sent.'}
+            </p>
+            <p className="text-amber-300/90 pl-6 font-medium">
+              Your booking is safe and confirmed. Please save or scan your official QR ticket pass below.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Digital Ticket Pass Card */}

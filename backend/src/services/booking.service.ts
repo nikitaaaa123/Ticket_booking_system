@@ -3,7 +3,7 @@ import { store } from '../db/store.ts';
 import { Booking, BookingItem, ShowSeat } from '../types/index.ts';
 import { realtimeService } from './realtime.service.ts';
 import { QRService } from './qr.service.ts';
-import { EmailService } from './email.service.ts';
+import { EmailService, sendBookingConfirmationEmail } from './email.service.ts';
 import { WaitlistService } from './waitlist.service.ts';
 import { SeatHoldService } from './seatHold.service.ts';
 
@@ -23,6 +23,12 @@ export interface ConfirmBookingResult {
     venueName: string;
     seatLabels: string[];
     qrCodeDataURL: string;
+  };
+  emailDelivery?: {
+    sent: boolean;
+    message: string;
+    statusCode?: number;
+    error?: string;
   };
   error?: string;
   message?: string;
@@ -209,40 +215,71 @@ export class BookingService {
         bookingReference,
       });
 
-      // Asynchronously dispatch confirmation email with QR code
-      console.log(`[BookingService] Initiating booking confirmation email dispatch:`, {
-        bookingReference,
-        recipientEmail: emailToUse,
-        recipientName: nameToUse,
-        showTitle: show.title,
-        seatLabels,
-        totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
-      });
+      // Dispatch confirmation email with embedded QR code pass via SendGrid / Email Service
+      let emailDelivery = {
+        sent: false,
+        message: 'Email dispatch initiated',
+        statusCode: undefined as number | undefined,
+        error: undefined as string | undefined,
+      };
 
-      EmailService.sendBookingConfirmation({
-        recipientEmail: emailToUse,
-        recipientName: nameToUse,
-        bookingReference,
-        showTitle: show.title,
-        venueName: venue?.name || 'Grand Stage Venue',
-        venueAddress: venue?.address || '',
-        startTime: show.startTime,
-        seatLabels,
-        totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
-        qrCodeDataURL: qrDataURL,
-        qrCodeBuffer: qrBuffer,
-      }).catch((err) => {
-        console.error('[BookingService] Error in async email confirmation dispatch:', err);
-      });
+      try {
+        console.log(`[BookingService] Initiating booking confirmation email dispatch:`, {
+          bookingReference,
+          recipientEmail: emailToUse,
+          recipientName: nameToUse,
+          showTitle: show.title,
+          seatLabels,
+          totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
+        });
+
+        const emailResult = await sendBookingConfirmationEmail(
+          newBooking,
+          { email: emailToUse, name: nameToUse },
+          {
+            showTitle: show.title,
+            venueName: venue?.name || 'Grand Stage Venue',
+            venueAddress: venue?.address || '',
+            startTime: show.startTime,
+            seatLabels,
+            qrCodeDataURL: qrDataURL,
+            qrCodeBuffer: qrBuffer,
+          }
+        );
+
+        emailDelivery = {
+          sent: emailResult.sent,
+          message: emailResult.message,
+          statusCode: emailResult.statusCode,
+          error: emailResult.error,
+        };
+      } catch (err: any) {
+        console.error('[BookingService] Unexpected error in confirmation email dispatch:', err);
+        emailDelivery = {
+          sent: false,
+          message: `Booking confirmed, but confirmation email could not be sent: ${err.message}`,
+          statusCode: 500,
+          error: err.message,
+        };
+      }
+
+      // Update booking object with delivery metadata
+      newBooking.emailDelivery = emailDelivery;
+      store.bookings.set(newBooking.id, newBooking);
 
       return {
         success: true,
+        message: emailDelivery.sent
+          ? 'Booking confirmed and confirmation email sent.'
+          : emailDelivery.message || 'Booking confirmed, but confirmation email could not be sent.',
+        emailDelivery,
         booking: {
           ...newBooking,
           showTitle: show.title,
           venueName: venue?.name || 'Grand Stage Venue',
           seatLabels,
           qrCodeDataURL: qrDataURL,
+          emailDelivery,
         },
       };
     });
