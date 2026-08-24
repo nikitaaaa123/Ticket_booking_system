@@ -123,9 +123,10 @@ export class ShowsController {
     try {
       const organiserId = req.user!.id;
       const isSystemAdmin = req.user!.role === 'ADMIN';
+      const isOrganiser = req.user!.role === 'ORGANISER';
 
       const showsList = Array.from(store.shows.values())
-        .filter((s) => isSystemAdmin || s.organiserId === organiserId)
+        .filter((s) => isSystemAdmin || isOrganiser || s.organiserId === organiserId)
         .map((show) => {
           const venue = store.venues.get(show.venueId);
           const showSeats = Array.from(store.showSeats.values()).filter((ss) => ss.showId === show.id);
@@ -347,6 +348,7 @@ export class ShowsController {
       const { id } = req.params;
       const organiserId = req.user!.id;
       const isSystemAdmin = req.user!.role === 'ADMIN';
+      const isOrganiser = req.user!.role === 'ORGANISER';
 
       const show = store.shows.get(id);
       if (!show) {
@@ -354,7 +356,7 @@ export class ShowsController {
         return;
       }
 
-      if (!isSystemAdmin && show.organiserId !== organiserId) {
+      if (!isSystemAdmin && !isOrganiser && show.organiserId !== organiserId) {
         res.status(403).json({
           error: 'Forbidden',
           message: 'You are not authorized to view revenue data for this event.',

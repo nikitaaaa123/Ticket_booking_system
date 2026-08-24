@@ -155,7 +155,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }),
       });
 
-      if (res.success) {
+      if (res.success || res.holdSessionToken) {
         const holdData: HoldSession = {
           holdSessionToken: res.holdSessionToken,
           showId: currentShowId,

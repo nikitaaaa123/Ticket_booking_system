@@ -34,7 +34,8 @@ class RealtimeService {
       ws.on('message', (rawMessage: string) => {
         try {
           const payload = JSON.parse(rawMessage.toString());
-          if (payload.action === 'SUBSCRIBE_SHOW' && payload.showId) {
+          const action = (payload.action || '').toUpperCase();
+          if ((action === 'SUBSCRIBE_SHOW' || action === 'SUBSCRIBE') && payload.showId) {
             clientInfo.showId = payload.showId;
             if (payload.userId) clientInfo.userId = payload.userId;
 
@@ -43,9 +44,9 @@ class RealtimeService {
               showId: payload.showId,
               message: `Subscribed to real-time seat updates for show ${payload.showId}`,
             });
-          } else if (payload.action === 'UNSUBSCRIBE') {
+          } else if (action === 'UNSUBSCRIBE' || action === 'UNSUBSCRIBE_SHOW') {
             clientInfo.showId = null;
-          } else if (payload.action === 'PING') {
+          } else if (action === 'PING') {
             this.safeSend(ws, { type: 'PONG', timestamp: Date.now() });
           }
         } catch {

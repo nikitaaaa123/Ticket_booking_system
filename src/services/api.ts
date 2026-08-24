@@ -43,5 +43,5 @@ export function getWebSocketUrl(): string {
 
   const loc = window.location;
   const protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${loc.host}`;
+  return `${protocol}//${loc.host}/ws`;
 }

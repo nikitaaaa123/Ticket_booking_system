@@ -64,7 +64,7 @@ export const OrganiserDashboardPage: React.FC = () => {
   const loadRevenue = async (sId: string) => {
     setSelectedShowId(sId);
     try {
-      const res = await apiFetch<{ summary: ShowRevenueSummary }>(`/api/reports/shows/${sId}/revenue`);
+      const res = await apiFetch<{ summary: ShowRevenueSummary }>(`/api/shows/${sId}/summary`);
       setRevenueSummary(res.summary);
       setActiveTab('revenue');
     } catch (err: any) {

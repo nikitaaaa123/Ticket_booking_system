@@ -290,8 +290,11 @@ export class BookingService {
    * Get Customer Booking History
    */
   public static getCustomerBookings(userId: string): any[] {
+    const user = store.users.get(userId);
+    const userEmail = user?.email?.toLowerCase();
+
     const bookings = Array.from(store.bookings.values())
-      .filter((b) => b.userId === userId)
+      .filter((b) => b.userId === userId || (userEmail && b.customerEmail && b.customerEmail.toLowerCase() === userEmail))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return bookings.map((b) => {

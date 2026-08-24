@@ -21,7 +21,7 @@ export class SeatsController {
       }
 
       // Sweep expired holds for this show prior to returning state (guarantees strictly fresh data)
-      SeatHoldService.sweepExpiredHoldsForShow(showId);
+      await SeatHoldService.sweepExpiredHoldsForShow(showId);
 
       const venue = store.venues.get(show.venueId);
       const categories = Array.from(store.categories.values()).filter((c) => c.venueId === show.venueId);
@@ -159,6 +159,7 @@ export class SeatsController {
       }
 
       res.status(200).json({
+        success: true,
         message: 'Seats held successfully',
         holdSessionToken: result.holdSessionToken,
         expiresAt: result.expiresAt,
@@ -191,6 +192,7 @@ export class SeatsController {
       const result = await SeatHoldService.releaseSeats(showId, seatIds, userId, holdSessionToken);
 
       res.status(200).json({
+        success: true,
         message: 'Seats released successfully',
         releasedSeatIds: result.releasedSeatIds,
       });

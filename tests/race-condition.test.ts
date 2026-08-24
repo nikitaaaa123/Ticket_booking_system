@@ -165,7 +165,7 @@ async function runRaceConditionTest() {
   console.log(`⏳ Backdated seat ${heldSeat.id} holdExpiresAt to past timestamp...`);
 
   // Trigger TTL sweep
-  const sweepResult = SeatHoldService.sweepExpiredHolds();
+  const sweepResult = await SeatHoldService.sweepExpiredHolds();
   console.log(`🧹 Sweeper ran:`, JSON.stringify(sweepResult));
 
   assert(sweepResult.expiredCount >= 1, 'Sweeper should detect expired hold');

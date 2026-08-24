@@ -548,8 +548,11 @@ export class WaitlistService {
    * Get user's waitlist entries
    */
   public static getUserWaitlist(userId: string): any[] {
+    const user = store.users.get(userId);
+    const userEmail = user?.email?.toLowerCase();
+
     const entries = Array.from(store.waitlist.values())
-      .filter((w) => w.userId === userId)
+      .filter((w) => w.userId === userId || (userEmail && w.customerEmail && w.customerEmail.toLowerCase() === userEmail))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return entries.map((entry) => {

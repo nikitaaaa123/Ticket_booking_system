@@ -16,7 +16,7 @@ class HoldExpiryJob {
     this.timer = setInterval(async () => {
       try {
         // 1. Sweep expired direct seat holds
-        const { expiredCount, showUpdates } = SeatHoldService.sweepExpiredHolds();
+        const { expiredCount, showUpdates } = await SeatHoldService.sweepExpiredHolds();
         if (expiredCount > 0) {
           console.log(
             `[HoldExpiryJob] Swept ${expiredCount} expired seat hold(s) across ${Object.keys(showUpdates).length} show(s)`

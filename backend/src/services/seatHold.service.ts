@@ -3,6 +3,7 @@ import { store } from '../db/store.ts';
 import { config } from '../config/env.ts';
 import { ShowSeat, SeatStatus } from '../types/index.ts';
 import { realtimeService } from './realtime.service.ts';
+import { WaitlistService } from './waitlist.service.ts';
 
 export interface HoldSeatsResult {
   success: boolean;
@@ -143,6 +144,7 @@ export class SeatHoldService {
 
     return await this.withSeatLocks(sortedSeatIds, async () => {
       const released: string[] = [];
+      const publicReleased: string[] = [];
 
       for (const seatId of sortedSeatIds) {
         const seat = store.showSeats.get(seatId);
@@ -167,13 +169,19 @@ export class SeatHoldService {
         seat.updatedAt = new Date().toISOString();
         store.showSeats.set(seat.id, seat);
         released.push(seat.id);
+
+        // Check if waitlist exists for this freed seat
+        const waitlistResult = await WaitlistService.processWaitlistForFreedSeat(showId, seat.id);
+        if (!waitlistResult.allocated) {
+          publicReleased.push(seat.id);
+        }
       }
 
-      if (released.length > 0) {
+      if (publicReleased.length > 0) {
         realtimeService.broadcastToShow(showId, {
           type: 'SEAT_RELEASED',
           showId,
-          seatIds: released,
+          seatIds: publicReleased,
         });
       }
 
@@ -184,12 +192,12 @@ export class SeatHoldService {
   /**
    * Background TTL Sweeper: Scans all held seats across all shows and releases expired ones.
    */
-  public static sweepExpiredHolds(): { expiredCount: number; showUpdates: Record<string, string[]> } {
+  public static async sweepExpiredHolds(): Promise<{ expiredCount: number; showUpdates: Record<string, string[]> }> {
     const now = new Date();
     const showUpdates: Record<string, string[]> = {};
     let expiredCount = 0;
 
-    for (const seat of store.showSeats.values()) {
+    for (const seat of Array.from(store.showSeats.values())) {
       if (seat.status === 'HELD' && seat.holdExpiresAt) {
         const expiryTime = new Date(seat.holdExpiresAt);
         if (expiryTime <= now) {
@@ -201,12 +209,16 @@ export class SeatHoldService {
           seat.version += 1;
           seat.updatedAt = now.toISOString();
           store.showSeats.set(seat.id, seat);
-
-          if (!showUpdates[seat.showId]) {
-            showUpdates[seat.showId] = [];
-          }
-          showUpdates[seat.showId].push(seat.id);
           expiredCount++;
+
+          // Attempt waitlist reallocation
+          const waitlistResult = await WaitlistService.processWaitlistForFreedSeat(seat.showId, seat.id);
+          if (!waitlistResult.allocated) {
+            if (!showUpdates[seat.showId]) {
+              showUpdates[seat.showId] = [];
+            }
+            showUpdates[seat.showId].push(seat.id);
+          }
         }
       }
     }
@@ -227,11 +239,12 @@ export class SeatHoldService {
   /**
    * Show-scoped sweep to guarantee fresh state prior to map queries
    */
-  public static sweepExpiredHoldsForShow(showId: string): string[] {
+  public static async sweepExpiredHoldsForShow(showId: string): Promise<string[]> {
     const now = new Date();
     const released: string[] = [];
+    const publicReleased: string[] = [];
 
-    for (const seat of store.showSeats.values()) {
+    for (const seat of Array.from(store.showSeats.values())) {
       if (seat.showId === showId && seat.status === 'HELD' && seat.holdExpiresAt) {
         if (new Date(seat.holdExpiresAt) <= now) {
           seat.status = 'AVAILABLE';
@@ -242,15 +255,20 @@ export class SeatHoldService {
           seat.updatedAt = now.toISOString();
           store.showSeats.set(seat.id, seat);
           released.push(seat.id);
+
+          const waitlistResult = await WaitlistService.processWaitlistForFreedSeat(showId, seat.id);
+          if (!waitlistResult.allocated) {
+            publicReleased.push(seat.id);
+          }
         }
       }
     }
 
-    if (released.length > 0) {
+    if (publicReleased.length > 0) {
       realtimeService.broadcastToShow(showId, {
         type: 'SEAT_RELEASED',
         showId,
-        seatIds: released,
+        seatIds: publicReleased,
         reason: 'HOLD_EXPIRED',
       });
     }

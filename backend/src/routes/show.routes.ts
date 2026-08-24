@@ -37,4 +37,11 @@ router.get(
   ShowsController.getShowSummary
 );
 
+router.get(
+  '/:id/revenue',
+  authenticate,
+  authorizeRoles('ORGANISER', 'ADMIN'),
+  ShowsController.getShowSummary
+);
+
 export default router;

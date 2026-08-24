@@ -38,6 +38,7 @@ async function startServer() {
 
   // Mount API Sub-routers
   app.use('/api/auth', authRoutes);
+  app.use('/api/venues', venueRoutes);
   app.use('/api/admin/venues', venueRoutes);
   app.use('/api/shows', showRoutes);
   app.use('/api/seats', seatRoutes);

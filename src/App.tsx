@@ -20,10 +20,16 @@ function MainApp() {
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
   const [claimOfferToken, setClaimOfferToken] = useState<string | null>(null);
 
-  // Parse URL query on mount for direct waitlist claim links (e.g. ?claimOffer=token)
+  // Parse URL query on mount for direct waitlist claim links (e.g. ?claimOffer=token or /booking/offer/token)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const offerToken = params.get('claimOffer') || params.get('offer');
+    let offerToken = params.get('claimOffer') || params.get('offer') || params.get('token');
+    if (!offerToken) {
+      const match = window.location.pathname.match(/\/(?:booking\/offer|claim-offer|waitlist\/claim)\/([^/?#]+)/);
+      if (match) {
+        offerToken = match[1];
+      }
+    }
     if (offerToken) {
       setClaimOfferToken(offerToken);
       setCurrentTab('claim-offer');
