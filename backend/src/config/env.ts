@@ -1,9 +1,9 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-const rawEmailFrom = process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || '';
-let parsedFromName = process.env.EMAIL_FROM_NAME || 'Ticket Booking System';
-let parsedFromAddress = process.env.EMAIL_FROM_ADDRESS || '';
+const rawEmailFrom = process.env.EMAIL_FROM || process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS || '';
+let parsedFromName = process.env.EMAIL_FROM_NAME || process.env.MAIL_FROM_NAME || 'Ticket Booking System';
+let parsedFromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.MAIL_FROM_ADDRESS || '';
 
 if (rawEmailFrom) {
   const match = rawEmailFrom.match(/(.*?)\s*<(.+?)>/);
@@ -15,11 +15,11 @@ if (rawEmailFrom) {
   }
 }
 
-const emailProvider = (process.env.EMAIL_PROVIDER || 'smtp').toLowerCase();
-let smtpHost = process.env.SMTP_HOST || '';
-let smtpUser = process.env.SMTP_USER || '';
-let smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
-let smtpPort = Number(process.env.SMTP_PORT) || 587;
+const emailProvider = (process.env.EMAIL_PROVIDER || process.env.MAIL_MAILER || 'smtp').toLowerCase();
+let smtpHost = process.env.SMTP_HOST || process.env.MAIL_HOST || '';
+let smtpUser = process.env.SMTP_USER || process.env.SMTP_USERNAME || process.env.MAIL_USERNAME || '';
+let smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.MAIL_PASSWORD || '';
+let smtpPort = Number(process.env.SMTP_PORT || process.env.MAIL_PORT) || 587;
 
 if (!smtpHost) {
   if (emailProvider === 'resend' || process.env.RESEND_API_KEY) {

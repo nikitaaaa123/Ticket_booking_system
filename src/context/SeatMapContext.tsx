@@ -27,7 +27,13 @@ interface SeatMapContextType {
   releaseHold: () => Promise<void>;
   loadShowSeats: (showId: string, silent?: boolean) => Promise<void>;
   handleSeatEvent: (event: RealtimeSeatEvent) => void;
-  joinWaitlist: (categoryId: string, requestedCount?: number, email?: string, name?: string) => Promise<{ success: boolean; queuePosition?: number; message?: string }>;
+  joinWaitlist: (
+    categoryId: string,
+    requestedCount?: number,
+    email?: string,
+    name?: string,
+    showId?: string
+  ) => Promise<{ success: boolean; queuePosition?: number; message?: string }>;
 }
 
 const SeatMapContext = createContext<SeatMapContextType | undefined>(undefined);
@@ -288,9 +294,30 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
     categoryId: string,
     requestedCount = 1,
     email?: string,
-    name?: string
+    name?: string,
+    showId?: string
   ) => {
-    if (!currentShowId) return { success: false, message: 'No show selected' };
+    const effectiveShowId = showId || currentShowId;
+    if (!effectiveShowId) {
+      console.error('[SeatMapContext] Cannot join waitlist: no showId provided or selected', {
+        showId,
+        currentShowId,
+        categoryId,
+      });
+      return { success: false, message: 'showId and categoryId are required.' };
+    }
+
+    const payload = {
+      showId: effectiveShowId,
+      categoryId,
+      requestedSeatsCount: requestedCount,
+      customerEmail: email || user?.email,
+      customerName: name || user?.fullName,
+      guestUserId: user ? undefined : guestUserId,
+    };
+
+    console.log('[SeatMapContext] POST /api/waitlist/join payload:', payload);
+
     try {
       const res = await apiFetch<{
         waitlistEntry: any;
@@ -298,19 +325,12 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         message: string;
       }>('/api/waitlist/join', {
         method: 'POST',
-        body: JSON.stringify({
-          showId: currentShowId,
-          categoryId,
-          requestedSeatsCount: requestedCount,
-          customerEmail: email || user?.email,
-          customerName: name || user?.fullName,
-          guestUserId: user ? undefined : guestUserId,
-        }),
+        body: JSON.stringify(payload),
       });
 
       // Refresh category list silently
-      if (currentShowId) {
-        loadShowSeats(currentShowId, true);
+      if (effectiveShowId) {
+        loadShowSeats(effectiveShowId, true);
       }
 
       return {
@@ -319,6 +339,7 @@ export const SeatMapProvider: React.FC<{ children: React.ReactNode }> = ({ child
         message: res.message,
       };
     } catch (err: any) {
+      console.error('[SeatMapContext] Waitlist join error:', err);
       return {
         success: false,
         message: err.message || 'Failed to join waitlist',

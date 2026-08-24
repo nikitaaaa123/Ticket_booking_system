@@ -197,6 +197,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
 
           {/* Waitlist Component if any category is sold out */}
           <WaitlistSection
+            showId={showId}
             categories={categories}
             onJoinWaitlist={joinWaitlist}
           />

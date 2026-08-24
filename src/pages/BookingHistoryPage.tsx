@@ -58,7 +58,7 @@ export const BookingHistoryPage: React.FC<BookingHistoryPageProps> = ({
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user?.id, user?.email]);
 
   const handleCancelBooking = async (bookingId: string) => {
     try {

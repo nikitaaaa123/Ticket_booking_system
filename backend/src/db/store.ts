@@ -316,6 +316,59 @@ class MemoryStore {
     this.showPricing.set(p2Mezz.id, p2Mezz);
 
     this.generateShowSeatsForShow(show2.id, venue2.id);
+
+    // Seed initial demo bookings for customer
+    const seedShowSeat1 = this.showSeats.get(`ss-${show1.id}-s-1-vip-1`);
+    if (seedShowSeat1) {
+      seedShowSeat1.status = 'BOOKED';
+    }
+    const seedShowSeat2 = this.showSeats.get(`ss-${show1.id}-s-1-vip-2`);
+    if (seedShowSeat2) {
+      seedShowSeat2.status = 'BOOKED';
+    }
+
+    const seedBooking1: Booking = {
+      id: 'bk-seed-1',
+      bookingReference: 'VP-SEEDED-01',
+      showId: show1.id,
+      userId: customerUser.id,
+      customerEmail: customerUser.email,
+      customerName: customerUser.fullName,
+      totalAmountCents: 24000,
+      currency: 'USD',
+      status: 'CONFIRMED',
+      items: [
+        { id: 'bki-1', bookingId: 'bk-seed-1', showSeatId: `ss-${show1.id}-s-1-vip-1`, seatLabel: 'A1', categoryId: catVip.id, priceCents: 12000 },
+        { id: 'bki-2', bookingId: 'bk-seed-1', showSeatId: `ss-${show1.id}-s-1-vip-2`, seatLabel: 'A2', categoryId: catVip.id, priceCents: 12000 },
+      ],
+      qrCodeDataURL: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="white"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="12" fill="black">PASS-VP-SEEDED-01</text></svg>',
+      createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    };
+    this.bookings.set(seedBooking1.id, seedBooking1);
+
+    const seedShowSeat3 = this.showSeats.get(`ss-${show2.id}-s-2-orch-1`);
+    if (seedShowSeat3) {
+      seedShowSeat3.status = 'BOOKED';
+    }
+    const seedBooking2: Booking = {
+      id: 'bk-seed-2',
+      bookingReference: 'VP-SEEDED-02',
+      showId: show2.id,
+      userId: customerUser.id,
+      customerEmail: customerUser.email,
+      customerName: customerUser.fullName,
+      totalAmountCents: 9500,
+      currency: 'USD',
+      status: 'CONFIRMED',
+      items: [
+        { id: 'bki-3', bookingId: 'bk-seed-2', showSeatId: `ss-${show2.id}-s-2-orch-1`, seatLabel: 'A1', categoryId: catFrontOrch.id, priceCents: 9500 },
+      ],
+      qrCodeDataURL: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="white"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="monospace" font-size="12" fill="black">PASS-VP-SEEDED-02</text></svg>',
+      createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+    };
+    this.bookings.set(seedBooking2.id, seedBooking2);
   }
 
   /**

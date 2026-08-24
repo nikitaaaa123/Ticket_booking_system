@@ -83,16 +83,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Fast demo role switcher
   const switchDemoUser = async (role: 'CUSTOMER' | 'ORGANISER' | 'ADMIN') => {
     const demoCredentials = {
-      CUSTOMER: { email: 'alice@example.com', pass: 'Password123!' },
-      ORGANISER: { email: 'liveevents@example.com', pass: 'Password123!' },
-      ADMIN: { email: 'admin@example.com', pass: 'Password123!' },
+      CUSTOMER: { email: 'customer@ticketbooking.com', pass: 'Password123!', name: 'Demo Customer' },
+      ORGANISER: { email: 'organiser@ticketbooking.com', pass: 'Password123!', name: 'Demo Organiser' },
+      ADMIN: { email: 'admin@ticketbooking.com', pass: 'Password123!', name: 'Demo Admin' },
     };
     const creds = demoCredentials[role];
     try {
       await login(creds.email, creds.pass);
     } catch {
       // If user doesn't exist, register on the fly
-      await register(creds.email, creds.pass, `Demo ${role}`, role);
+      await register(creds.email, creds.pass, creds.name || `Demo ${role}`, role);
     }
   };
 

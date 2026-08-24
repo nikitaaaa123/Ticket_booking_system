@@ -5,12 +5,14 @@ import { apiFetch } from '../services/api.ts';
 import { Users, Clock, AlertCircle, CheckCircle2, ChevronRight, ArrowRight, Loader2, Check } from 'lucide-react';
 
 interface WaitlistSectionProps {
+  showId?: string;
   categories: CategorySummary[];
   onJoinWaitlist: (
     categoryId: string,
     requestedCount: number,
     email?: string,
-    name?: string
+    name?: string,
+    showId?: string
   ) => Promise<{ success: boolean; queuePosition?: number; message?: string }>;
 }
 
@@ -20,6 +22,7 @@ interface JoinedTierInfo {
 }
 
 export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
+  showId,
   categories,
   onJoinWaitlist,
 }) => {
@@ -38,7 +41,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
   // Load user's existing waitlist entries to show live queue status
   useEffect(() => {
     if (!user) return;
-    apiFetch<{ waitlist: any[] }>('/api/waitlist/my')
+    apiFetch<{ waitlist: any[] }>('/api/waitlist/my-waitlist')
       .then((res) => {
         if (res.waitlist && Array.isArray(res.waitlist)) {
           const map = new Map<string, JoinedTierInfo>();
@@ -78,7 +81,14 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       setJoiningCatId(catId);
       setFeedback(null);
       try {
-        const res = await onJoinWaitlist(catId, seatCount, user.email, user.fullName);
+        console.log('[WaitlistSection] handleTierClick dispatching onJoinWaitlist:', {
+          showId,
+          categoryId: catId,
+          seatCount,
+          email: user.email,
+          name: user.fullName,
+        });
+        const res = await onJoinWaitlist(catId, seatCount, user.email, user.fullName, showId);
         if (res.success) {
           setJoinedTiers((prev) => {
             const next = new Map(prev);
@@ -128,7 +138,14 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
     }
 
     try {
-      const res = await onJoinWaitlist(selectedCatId, seatCount, emailToUse, nameToUse);
+      console.log('[WaitlistSection] handleGuestSubmit dispatching onJoinWaitlist:', {
+        showId,
+        categoryId: selectedCatId,
+        seatCount,
+        email: emailToUse,
+        name: nameToUse,
+      });
+      const res = await onJoinWaitlist(selectedCatId, seatCount, emailToUse, nameToUse, showId);
       if (res.success) {
         setJoinedTiers((prev) => {
           const next = new Map(prev);

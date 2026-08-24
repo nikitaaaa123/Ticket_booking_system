@@ -42,7 +42,10 @@ export const OrganiserDashboardPage: React.FC = () => {
     setIsLoading(true);
     try {
       const [showsRes, venuesRes] = await Promise.all([
-        apiFetch<{ shows: Show[] }>('/api/shows'),
+        apiFetch<{ shows: Show[] }>('/api/shows/organiser/my-shows').catch(async () => {
+          // Fallback to public shows if not an organiser endpoint
+          return apiFetch<{ shows: Show[] }>('/api/shows');
+        }),
         apiFetch<{ venues: Venue[] }>('/api/venues'),
       ]);
       setShows(showsRes.shows || []);
@@ -59,7 +62,7 @@ export const OrganiserDashboardPage: React.FC = () => {
 
   useEffect(() => {
     loadOrganiserData();
-  }, []);
+  }, [user?.id]);
 
   const loadRevenue = async (sId: string) => {
     setSelectedShowId(sId);
@@ -297,6 +300,62 @@ export const OrganiserDashboardPage: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Attendee Bookings List */}
+          <div className="pt-4 border-t border-slate-800">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">
+              Confirmed Attendee Bookings ({revenueSummary.bookings?.length || 0})
+            </h3>
+            {revenueSummary.bookings && revenueSummary.bookings.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="py-2.5 px-4">Booking Ref</th>
+                      <th className="py-2.5 px-4">Customer</th>
+                      <th className="py-2.5 px-4">Seats Reserved</th>
+                      <th className="py-2.5 px-4">Status</th>
+                      <th className="py-2.5 px-4 text-right">Amount Paid</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {revenueSummary.bookings.map((b: any) => (
+                      <tr key={b.id} className="hover:bg-slate-800/30">
+                        <td className="py-2.5 px-4 font-mono font-bold text-cyan-400">
+                          {b.bookingReference}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="font-semibold text-white">{b.customerName || 'Anonymous'}</div>
+                          <div className="text-[11px] text-slate-400">{b.customerEmail}</div>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {(b.seatLabels || []).map((lbl: string, i: number) => (
+                              <span key={i} className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[10px]">
+                                {lbl}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-950/80 border border-emerald-800 text-emerald-300">
+                            {b.status}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-mono font-bold text-emerald-400 text-right">
+                          ${(b.totalAmountCents / 100).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-6 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-center text-slate-500 text-xs">
+                No customer bookings recorded for this event yet.
+              </div>
+            )}
           </div>
         </div>
       )}

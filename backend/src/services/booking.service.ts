@@ -176,6 +176,15 @@ export class BookingService {
     });
 
     // Asynchronously dispatch confirmation email with QR code
+    console.log(`[BookingService] Initiating booking confirmation email dispatch:`, {
+      bookingReference,
+      recipientEmail: emailToUse,
+      recipientName: nameToUse,
+      showTitle: show.title,
+      seatLabels,
+      totalAmountFormatted: `$${(totalAmountCents / 100).toFixed(2)}`,
+    });
+
     EmailService.sendBookingConfirmation({
       recipientEmail: emailToUse,
       recipientName: nameToUse,
@@ -189,7 +198,7 @@ export class BookingService {
       qrCodeDataURL: qrDataURL,
       qrCodeBuffer: qrBuffer,
     }).catch((err) => {
-      console.error('[BookingService] Failed to send email async:', err);
+      console.error('[BookingService] Error in async email confirmation dispatch:', err);
     });
 
     return {

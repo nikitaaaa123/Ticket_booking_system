@@ -123,10 +123,9 @@ export class ShowsController {
     try {
       const organiserId = req.user!.id;
       const isSystemAdmin = req.user!.role === 'ADMIN';
-      const isOrganiser = req.user!.role === 'ORGANISER';
 
       const showsList = Array.from(store.shows.values())
-        .filter((s) => isSystemAdmin || isOrganiser || s.organiserId === organiserId)
+        .filter((s) => isSystemAdmin || s.organiserId === organiserId)
         .map((show) => {
           const venue = store.venues.get(show.venueId);
           const showSeats = Array.from(store.showSeats.values()).filter((ss) => ss.showId === show.id);
@@ -368,7 +367,7 @@ export class ShowsController {
         return;
       }
 
-      if (!isSystemAdmin && !isOrganiser && show.organiserId !== organiserId) {
+      if (!isSystemAdmin && show.organiserId !== organiserId) {
         res.status(403).json({
           error: 'Forbidden',
           message: 'You are not authorized to view revenue data for this event.',
@@ -418,7 +417,17 @@ export class ShowsController {
         };
       });
 
-      const summary: ShowRevenueSummaryDTO = {
+      const enrichedBookings = confirmedBookings.map((b) => {
+        const seatLabels = (b.items || []).map((item) => {
+          return item.seatLabel || item.showSeatId;
+        });
+        return {
+          ...b,
+          seatLabels,
+        };
+      });
+
+      const summary: any = {
         showId: show.id,
         title: show.title,
         startTime: show.startTime,
@@ -432,6 +441,7 @@ export class ShowsController {
         currency: 'USD',
         occupancyPercentage: totalSeats > 0 ? Math.round((bookedSeats / totalSeats) * 100) : 0,
         categoryBreakdown,
+        bookings: enrichedBookings,
       };
 
       res.status(200).json({ summary });

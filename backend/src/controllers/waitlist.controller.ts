@@ -12,17 +12,25 @@ export class WaitlistController {
    */
   public static async joinWaitlist(req: Request, res: Response): Promise<void> {
     try {
-      const {
-        showId,
-        categoryId,
-        requestedSeatsCount = 1,
-        customerEmail,
-        customerName,
-      }: JoinWaitlistRequestDTO = req.body;
+      console.log('[WaitlistController] Received join waitlist request:', {
+        body: req.body,
+        user: req.user ? { id: req.user.id, email: req.user.email, role: req.user.role } : null,
+      });
+
+      const showId = req.body.showId || req.body.show_id;
+      const categoryId = req.body.categoryId || req.body.tierId || req.body.category_id || req.body.tier_id;
+      const requestedSeatsCount = req.body.requestedSeatsCount || req.body.requestedCount || req.body.seatCount || 1;
+      const customerEmail = req.body.customerEmail || req.body.email || req.user?.email;
+      const customerName = req.body.customerName || req.body.name || req.user?.fullName;
 
       const userId = req.user ? req.user.id : (req.body.guestUserId || `guest-${Date.now()}`);
 
       if (!showId || !categoryId) {
+        console.warn('[WaitlistController] Missing required fields in join waitlist payload:', {
+          showId,
+          categoryId,
+          body: req.body,
+        });
         res.status(400).json({
           error: 'ValidationError',
           message: 'showId and categoryId are required.',
