@@ -26,6 +26,11 @@ async function runWaitlistLifecycleTest() {
   console.log('====================================================\n');
 
   await store.initPromise;
+  if (store.showSeats.size === 0) {
+    await store.seedInitialData(true);
+  }
+  store.waitlist.clear();
+  store.waitlistOffers.clear();
   const showId = 'show-interstellar-1';
   const categoryId = 'cat-vip-1'; // VIP category
 

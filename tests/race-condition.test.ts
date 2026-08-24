@@ -21,8 +21,20 @@ async function runRaceConditionTest() {
 
   // Ensure DB seed is completed
   await store.initPromise;
+  if (store.showSeats.size === 0) {
+    await store.seedInitialData(true);
+  }
 
   const showId = 'show-interstellar-1';
+  // Ensure seats are available
+  for (const s of store.showSeats.values()) {
+    if (s.showId === showId) {
+      s.status = 'AVAILABLE';
+      s.heldByUserId = null;
+      s.holdExpiresAt = null;
+      s.holdSessionToken = null;
+    }
+  }
   // Pick an available seat
   const targetSeat = Array.from(store.showSeats.values()).find(
     (s) => s.showId === showId && s.status === 'AVAILABLE'

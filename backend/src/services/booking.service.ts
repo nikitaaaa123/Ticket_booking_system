@@ -178,23 +178,18 @@ export class BookingService {
       bookingItems.forEach((bi) => (bi.bookingId = bookingId));
 
       // Generate QR Code containing verifiable pass payload
-      const qrDataURL = await QRService.generateDataURL({
+      const qrPayload = {
         ref: bookingReference,
         showId: show.id,
         showTitle: show.title,
         seats: seatLabels,
         userId,
         confirmedAt: now.toISOString(),
-      });
+      };
 
-      const qrBuffer = await QRService.generateBuffer({
-        ref: bookingReference,
-        showId: show.id,
-        showTitle: show.title,
-        seats: seatLabels,
-        userId,
-        confirmedAt: now.toISOString(),
-      });
+      const qrDataURL = await QRService.generateDataURL(qrPayload);
+      const qrBuffer = await QRService.generateBuffer(qrPayload);
+      const qrPublicURL = QRService.generatePublicURL(qrPayload);
 
       const newBooking: Booking = {
         id: bookingId,
@@ -260,6 +255,7 @@ export class BookingService {
             venueAddress: venue?.address || '',
             startTime: show.startTime,
             seatLabels,
+            qrImageUrl: qrPublicURL,
             qrCodeDataURL: qrDataURL,
             qrCodeBuffer: qrBuffer,
           }

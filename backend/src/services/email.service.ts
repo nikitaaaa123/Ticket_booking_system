@@ -13,6 +13,7 @@ export interface BookingEmailData {
   startTime: string;
   seatLabels: string[];
   totalAmountFormatted: string;
+  qrImageUrl?: string;
   qrCodeDataURL: string;
   qrCodeBuffer?: Buffer;
 }
@@ -136,6 +137,16 @@ export class EmailService {
       )
       .join(' ');
 
+    const qrImageUrl =
+      data.qrImageUrl ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+        JSON.stringify({
+          ref: data.bookingReference,
+          showTitle: data.showTitle,
+          seats: data.seatLabels,
+        })
+      )}&margin=4&color=0F172A&bgcolor=FFFFFF`;
+
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -198,13 +209,13 @@ export class EmailService {
                 </tr>
               </table>
 
-              <!-- QR Code Ticket Section -->
+              <!-- QR Code Ticket Section (Directly Rendered Inside Gate Pass Container) -->
               <div style="text-align:center;padding:20px 0 10px;">
                 <div style="font-size:13px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:12px;letter-spacing:0.5px;">Gate Entry QR Pass</div>
-                <div style="display:inline-block;padding:12px;background:#FFFFFF;border:2px solid #E2E8F0;border-radius:12px;">
-                  <img src="cid:booking-qr-${data.bookingReference}" alt="Gate Entry QR Pass" width="220" height="220" style="display:block;border-radius:4px;margin:0 auto;max-width:220px;height:auto;" />
+                <div style="display:inline-block;padding:14px;background:#FFFFFF;border:2px solid #E2E8F0;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.04);">
+                  <img src="${qrImageUrl}" alt="Gate Entry QR Pass - ${data.bookingReference}" width="220" height="220" style="display:block;border-radius:6px;margin:0 auto;max-width:220px;height:auto;border:0;outline:none;text-decoration:none;" />
                 </div>
-                <p style="margin:8px 0 0;font-size:12px;color:#94A3B8;">Pass ID: ${data.bookingReference} &bull; Scan on arrival</p>
+                <p style="margin:10px 0 0;font-size:13px;color:#64748B;">Pass ID: <strong style="font-family:monospace;color:#0F172A;letter-spacing:0.5px;">${data.bookingReference}</strong> &bull; Scan on arrival</p>
               </div>
 
             </td>
@@ -253,10 +264,21 @@ export class EmailService {
     const senderName = envConfig.emailFromName;
     const subject = `Confirmed: Your tickets for ${data.showTitle} [Ref: ${data.bookingReference}]`;
 
+    const qrImageUrl =
+      data.qrImageUrl ||
+      `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+        JSON.stringify({
+          ref: data.bookingReference,
+          showTitle: data.showTitle,
+          seats: data.seatLabels,
+        })
+      )}&margin=4&color=0F172A&bgcolor=FFFFFF`;
+
     const htmlContent = this.renderBookingConfirmationHTML({
       ...data,
       recipientEmail,
       recipientName,
+      qrImageUrl,
     });
 
     const textContent = `
@@ -272,7 +294,7 @@ Total Paid: ${data.totalAmountFormatted}
 Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingReference} at gate entrance.
 `.trim();
 
-    // Prepare QR Code base64 data for attachment/CID inline embedding
+    // Prepare QR Code base64 data for attachment/CID inline embedding if needed
     let qrBase64 = '';
     if (data.qrCodeBuffer && Buffer.isBuffer(data.qrCodeBuffer)) {
       qrBase64 = data.qrCodeBuffer.toString('base64');
@@ -299,18 +321,6 @@ Your ticket pass with QR check-in is confirmed. Present Pass ID ${data.bookingRe
           subject,
           text: textContent,
           html: htmlContent,
-          attachments: qrBase64
-            ? [
-                {
-                  content: qrBase64,
-                  filename: `gate-pass-${data.bookingReference}.png`,
-                  type: 'image/png',
-                  disposition: 'inline',
-                  content_id: `booking-qr-${data.bookingReference}`,
-                  contentId: `booking-qr-${data.bookingReference}`,
-                } as any,
-              ]
-            : [],
         };
 
         const [response] = await sgMail.send(msg);
@@ -641,6 +651,7 @@ export async function sendBookingConfirmationEmail(
     venueAddress?: string;
     startTime?: string;
     seatLabels?: string[];
+    qrImageUrl?: string;
     qrCodeDataURL?: string;
     qrCodeBuffer?: Buffer;
   }
@@ -657,6 +668,7 @@ export async function sendBookingConfirmationEmail(
       ? booking.items.map((item) => item.seatLabel)
       : ['General Admission']);
   const totalAmountFormatted = `$${(booking.totalAmountCents / 100).toFixed(2)}`;
+  const qrImageUrl = showDetails?.qrImageUrl;
   const qrCodeDataURL = showDetails?.qrCodeDataURL || booking.qrCodeDataURL || '';
   const qrCodeBuffer = showDetails?.qrCodeBuffer;
 
@@ -670,6 +682,7 @@ export async function sendBookingConfirmationEmail(
     startTime,
     seatLabels,
     totalAmountFormatted,
+    qrImageUrl,
     qrCodeDataURL,
     qrCodeBuffer,
   });

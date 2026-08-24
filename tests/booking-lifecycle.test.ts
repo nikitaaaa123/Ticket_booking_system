@@ -21,10 +21,25 @@ async function runBookingLifecycleTest() {
   console.log('====================================================\n');
 
   await store.initPromise;
+  if (store.showSeats.size === 0) {
+    await store.seedInitialData(true);
+  }
   const showId = 'show-interstellar-1';
   const customerId = 'u-cust-1';
   const customerEmail = 'sarah.connor@example.com';
   const customerName = 'Sarah Connor';
+
+  // Ensure test seats are available
+  for (const s of store.showSeats.values()) {
+    if (s.showId === showId) {
+      s.status = 'AVAILABLE';
+      s.heldByUserId = null;
+      s.holdExpiresAt = null;
+      s.holdSessionToken = null;
+    }
+  }
+
+  console.log('Store stats:', { users: store.users.size, shows: store.shows.size, seats: store.seats.size, showSeats: store.showSeats.size });
 
   // Step 1: Find two available seats
   const availableSeats = Array.from(store.showSeats.values()).filter(

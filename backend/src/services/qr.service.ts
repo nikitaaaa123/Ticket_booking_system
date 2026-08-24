@@ -43,4 +43,12 @@ export class QRService {
       },
     });
   }
+
+  /**
+   * Generates a reliable HTTPS QR image URL for seamless email rendering in Gmail, Outlook, and Apple Mail
+   */
+  public static generatePublicURL(payload: TicketQRPayload | string): string {
+    const textData = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(textData)}&margin=4&color=0F172A&bgcolor=FFFFFF`;
+  }
 }

@@ -13,4 +13,7 @@ router.get('/my-bookings', authenticate, BookingsController.getMyBookings);
 // Cancel booking (requires JWT authentication)
 router.post('/cancel', authenticate, BookingsController.cancelBooking);
 
+// Public QR Code image pass for confirmed booking
+router.get('/:reference/qr.png', BookingsController.getBookingQRPNG);
+
 export default router;

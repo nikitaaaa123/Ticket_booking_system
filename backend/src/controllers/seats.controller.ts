@@ -87,6 +87,7 @@ export class SeatsController {
         ).length;
 
         return {
+          id: cat.id,
           categoryId: cat.id,
           name: cat.name,
           colorCode: cat.colorCode,

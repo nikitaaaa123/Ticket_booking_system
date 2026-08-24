@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { BookingService } from '../services/booking.service.ts';
-import { ConfirmBookingRequestDTO, CancelBookingRequestDTO } from '../types/index.ts';
+import { QRService } from '../services/qr.service.ts';
+import { store } from '../db/store.ts';
+import { ConfirmBookingRequestDTO, CancelBookingRequestDTO, Booking } from '../types/index.ts';
 
 export class BookingsController {
   /**
@@ -119,6 +121,44 @@ export class BookingsController {
         message: result.message,
         freedSeatIds: result.freedSeatIds,
       });
+    } catch (error: any) {
+      res.status(500).json({ error: 'InternalServerError', message: error.message });
+    }
+  }
+
+  /**
+   * Endpoint: GET /api/bookings/:reference/qr.png
+   * Public endpoint to retrieve raw PNG QR pass for a confirmed booking
+   */
+  public static async getBookingQRPNG(req: Request, res: Response): Promise<void> {
+    try {
+      const { reference } = req.params;
+      if (!reference) {
+        res.status(400).json({ error: 'ValidationError', message: 'Booking reference is required.' });
+        return;
+      }
+
+      const booking = Array.from(store.bookings.values()).find(
+        (b) => b.bookingReference.toUpperCase() === reference.toUpperCase()
+      );
+
+      if (!booking) {
+        res.status(404).json({ error: 'NotFound', message: 'Booking not found.' });
+        return;
+      }
+
+      const qrBuffer = await QRService.generateBuffer({
+        ref: booking.bookingReference,
+        showId: booking.showId,
+        showTitle: (booking as any).showTitle || 'Event Performance',
+        seats: booking.items ? booking.items.map((i) => i.seatLabel) : [],
+        userId: booking.userId || 'guest',
+        confirmedAt: booking.createdAt,
+      });
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(qrBuffer);
     } catch (error: any) {
       res.status(500).json({ error: 'InternalServerError', message: error.message });
     }

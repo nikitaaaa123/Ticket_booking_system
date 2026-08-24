@@ -225,13 +225,14 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
       {/* Sold Out Categories Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
         {soldOutCategories.map((cat) => {
-          const isSelected = selectedCatId === cat.id;
-          const joinedInfo = joinedTiers.get(cat.id);
-          const isJoining = joiningCatId === cat.id;
+          const catId = cat.id || (cat as any).categoryId;
+          const isSelected = selectedCatId === catId;
+          const joinedInfo = joinedTiers.get(catId);
+          const isJoining = joiningCatId === catId;
 
           return (
             <div
-              key={cat.id}
+              key={catId}
               className={`p-4 rounded-xl border transition-all ${
                 joinedInfo
                   ? 'bg-emerald-950/30 border-emerald-700/60 text-white'
@@ -265,10 +266,10 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
                   </span>
                 ) : (
                   <button
-                    id={`join-waitlist-btn-${cat.id}`}
+                    id={`join-waitlist-btn-${catId}`}
                     type="button"
                     disabled={isJoining}
-                    onClick={() => handleTierClick(cat.id)}
+                    onClick={() => handleTierClick(catId)}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs shadow-md hover:shadow-amber-500/20 transition-all cursor-pointer"
                   >
                     {isJoining ? (
@@ -295,7 +296,7 @@ export const WaitlistSection: React.FC<WaitlistSectionProps> = ({
         <form onSubmit={handleGuestSubmit} className="bg-slate-800/80 p-5 rounded-xl border border-amber-500/50 space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-              Enter details for: {categories.find((c) => c.id === selectedCatId)?.name}
+              Enter details for: {categories.find((c) => (c.id || (c as any).categoryId) === selectedCatId)?.name || 'Selected Tier'}
             </div>
             <button
               type="button"

@@ -35,12 +35,13 @@ class MemoryStore {
     this.initPromise = this.seedInitialData();
   }
 
-  public async seedInitialData(): Promise<void> {
-    if (process.env.SEED_DATABASE === 'false') return;
-    if (this.users.size > 0 && this.shows.size > 0) return;
+  public async seedInitialData(force = false): Promise<void> {
+    if (!force && process.env.SEED_DATABASE === 'false') return;
+    if (!force && this.users.size > 0 && this.shows.size > 0) return;
 
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('Password123!', salt);
+    try {
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash('Password123!', salt);
 
     // 1. Seed Users
     const adminUser: User = {
@@ -317,6 +318,9 @@ class MemoryStore {
     this.showPricing.set(p2Mezz.id, p2Mezz);
 
     this.generateShowSeatsForShow(show2.id, venue2.id);
+    } catch (err: any) {
+      console.error('[Store] Error during seedInitialData:', err);
+    }
   }
 
   /**
