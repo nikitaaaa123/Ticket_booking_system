@@ -36,6 +36,7 @@ class MemoryStore {
   }
 
   public async seedInitialData(): Promise<void> {
+    if (process.env.SEED_DATABASE === 'false') return;
     if (this.users.size > 0 && this.shows.size > 0) return;
 
     const salt = await bcrypt.genSalt(10);

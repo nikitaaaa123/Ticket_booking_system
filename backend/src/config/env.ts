@@ -47,8 +47,9 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'ticket-booking-dev-jwt-super-secret-key-32chars',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   appUrl: process.env.APP_URL || 'http://localhost:3000',
-  defaultSeatHoldTTLMinutes: Number(process.env.DEFAULT_SEAT_HOLD_TTL_MINUTES) || 10,
-  defaultWaitlistOfferTTLMinutes: Number(process.env.DEFAULT_WAITLIST_OFFER_TTL_MINUTES) || 15,
+  defaultSeatHoldTTLMinutes: Number(process.env.SEAT_HOLD_TTL_MINUTES || process.env.DEFAULT_SEAT_HOLD_TTL_MINUTES) || 10,
+  defaultWaitlistOfferTTLMinutes: Number(process.env.WAITLIST_OFFER_TTL_MINUTES || process.env.DEFAULT_WAITLIST_OFFER_TTL_MINUTES) || 15,
+  seedDatabase: process.env.SEED_DATABASE !== 'false',
   sweepIntervalSeconds: Number(process.env.SWEEP_INTERVAL_SECONDS) || 15,
   get sendgridApiKey() {
     return (process.env.SENDGRID_API_KEY || '').trim();
