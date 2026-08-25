@@ -799,7 +799,7 @@ Declines the offer, releasing the seat immediately to the next person in line.
 
 ## 🚢 Deployment Guide & Checklist
 
-Deploying the application to cloud environments (Render, Railway, Fly.io, Vercel + Neon):
+Deploying the application to cloud environments (Render, Railway, Fly.io, Vercel + Neon): https://ticket-booking-backend-0850.onrender.com/api/events
 
 ### 1. Database Provisioning (PostgreSQL)
 - Create a PostgreSQL database on **Neon**, **Supabase**, **Railway**, or **AWS RDS**.
